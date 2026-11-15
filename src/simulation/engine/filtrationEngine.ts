@@ -6,6 +6,7 @@ import type {
   WaterQuality,
 } from '@/types'
 import {
+  ADSORPTION_FOULING,
   COLUMN_LIMITS,
   CONTACT_TIME_SCALE,
   INITIAL_WATER,
@@ -67,8 +68,14 @@ function turbidityThrough(tIn: number, kTurb: number, depth: number): number {
 }
 
 /** Pseudo-first-order adsorption decay through one bed. */
-function contaminantThrough(cIn: number, kAds: number, depth: number, tFactor: number): number {
-  return cIn * Math.exp(-kAds * depth * tFactor)
+function contaminantThrough(
+  cIn: number,
+  kAds: number,
+  depth: number,
+  tFactor: number,
+  fouling: number,
+): number {
+  return cIn * Math.exp(-kAds * fouling * depth * tFactor)
 }
 
 /** pH drift toward neutral through one bed. */
@@ -78,6 +85,26 @@ function pHThrough(pH: number, f: number, depth: number): number {
 
 /** Clamp a value into [0, 100]. */
 const pct = (x: number) => Math.max(0, Math.min(100, x))
+
+/**
+ * Storm-driven simulation input. A heavy-rain event mobilizes soil and
+ * dissolved model contaminant proportionally to rainfall intensity:
+ *
+ *   turbidity    30 → 100 NTU   (bare-soil erosion assumption)
+ *   contaminant   5 →  14 mg/L  (wash-off assumption, model compound)
+ *   pH            fixed 6.4     (slightly acidic farmland assumption)
+ *
+ * These couplings are MODEL ASSUMPTIONS chosen for teaching — they are
+ * not experimentally verified relationships.
+ */
+export function initialWaterFromStorm(intensity: number): WaterQuality {
+  const i = Math.max(0, Math.min(1, intensity))
+  return {
+    turbidity: round(30 + 70 * i, 1),
+    contaminant: round(5 + 9 * i, 2),
+    pH: 6.4,
+  }
+}
 
 /**
  * Validate a filter configuration before running the engine.
@@ -147,13 +174,20 @@ export function validateConfigCached(layers: FilterLayer[]): ConfigValidation {
 
 /**
  * Run the educational filtration model for a given column configuration.
- * Pure function — no side effects, no randomness.
+ * Pure function — no side effects, no randomness. The caller supplies
+ * `id` and `timestamp` (identity metadata), keeping the model itself
+ * fully deterministic.
  */
 export function simulateFiltration(
   layers: FilterLayer[],
   flowRate: number,
   initial: WaterQuality = INITIAL_WATER,
+  meta: { id: string; timestamp: number } = {
+    id: `sim-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+    timestamp: Date.now(),
+  },
 ): SimResult {
+  const { id, timestamp } = meta
   const tFactor = contactTimeFactor(layers, flowRate)
 
   let turbidity = initial.turbidity
@@ -164,8 +198,14 @@ export function simulateFiltration(
     const params = MATERIAL_PARAMS[layer.material]
     const depth = layerDepth(layer)
 
+    // Adsorption fouling: the dirtier the water when it reaches this bed
+    // (relative to the column inlet), the less effective adsorption is.
+    // This makes the order of media layers matter.
+    const fouling =
+      1 - ADSORPTION_FOULING * Math.min(1, turbidity / Math.max(initial.turbidity, 1e-6))
+
     turbidity = turbidityThrough(turbidity, params.turbidityK, depth)
-    contaminant = contaminantThrough(contaminant, params.adsorptionK, depth, tFactor)
+    contaminant = contaminantThrough(contaminant, params.adsorptionK, depth, tFactor, fouling)
     pH = pHThrough(pH, params.pHFactor, depth)
 
     return {
@@ -185,8 +225,8 @@ export function simulateFiltration(
   const overallEfficiency = pct((turbidityRemoval + contaminantRemoval) / 2)
 
   return {
-    id: `sim-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-    timestamp: Date.now(),
+    id,
+    timestamp,
     config: layers.map((l) => ({ ...l })),
     flowRate,
     initial: { ...initial },

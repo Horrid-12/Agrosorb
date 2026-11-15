@@ -11,11 +11,15 @@ import type {
 import {
   COLUMN_LIMITS,
   DEFAULT_FLOW_RATE,
-  INITIAL_WATER,
-  MATERIAL_PARAMS,
   RAIN,
+  TREATMENT,
 } from '@/simulation/models/constants'
-import { simulateFiltration, validateConfig, validateConfigCached } from '@/simulation/engine/filtrationEngine'
+import {
+  initialWaterFromStorm,
+  simulateFiltration,
+  validateConfig,
+  validateConfigCached,
+} from '@/simulation/engine/filtrationEngine'
 
 let nextLayerId = 1
 const makeLayerId = () => `layer-${nextLayerId++}`
@@ -29,6 +33,20 @@ function defaultConfig(): FilterLayer[] {
   ]
 }
 
+/**
+ * Visual treatment stages. The engine math is instant and deterministic;
+ * these stages only sequence the in-scene animation before the result is
+ * committed (see `TREATMENT` in constants).
+ */
+export type TreatmentStage = 'idle' | 'filling' | 'filtering' | 'draining' | 'done'
+export type SimStatus = 'idle' | 'running' | 'complete' | 'error'
+
+const NEXT_STAGE: Record<string, TreatmentStage> = {
+  filling: 'filtering',
+  filtering: 'draining',
+  draining: 'done',
+}
+
 interface SimulationState {
   /* Environment / game phase */
   phase: SimPhase
@@ -38,6 +56,14 @@ interface SimulationState {
   /* Column configuration */
   layers: FilterLayer[]
   flowRate: number
+
+  /* Treatment process */
+  simStatus: SimStatus
+  treatmentStage: TreatmentStage
+  /** Seconds elapsed inside the current treatment stage. */
+  stageElapsed: number
+  simError: string[] | null
+  pendingResult: SimResult | null
 
   /* Results */
   result: SimResult | null
@@ -65,6 +91,11 @@ interface SimulationState {
 
   /* Actions — simulation */
   runSimulation: () => void
+  /** Called every frame while the treatment animation plays. */
+  advanceTreatment: (dt: number) => void
+  /** Full reset: weather, flow, filter config, status and visual water. History is preserved. */
+  resetSimulation: () => void
+  clearHistory: () => void
 
   /* Actions — HUD */
   setPanel: (panel: HudPanel) => void
@@ -80,6 +111,12 @@ export const useSimulationStore = create<SimulationState>()(
 
       layers: defaultConfig(),
       flowRate: DEFAULT_FLOW_RATE,
+
+      simStatus: 'idle',
+      treatmentStage: 'idle',
+      stageElapsed: 0,
+      simError: null,
+      pendingResult: null,
 
       result: null,
       history: [],
@@ -135,17 +172,88 @@ export const useSimulationStore = create<SimulationState>()(
       setFlowRate: (v) => set({ flowRate: v }),
 
       /* ------------------------------------------------------------ */
+      /**
+       * Validate → generate storm input → compute result (deterministic
+       * engine) → hand off to the animated treatment sequence. The result
+       * is only committed to `result`/`history` when the animation ends.
+       */
       runSimulation: () => {
-        const { layers, flowRate, history } = get()
+        const { layers, flowRate, rainIntensity, simStatus } = get()
+        if (simStatus === 'running') return
+
         const validation = validateConfig(layers)
-        if (!validation.valid) return
-        const result = simulateFiltration(layers, flowRate, INITIAL_WATER)
+        if (!validation.valid) {
+          set({ simStatus: 'error', simError: validation.errors, treatmentStage: 'idle', stageElapsed: 0 })
+          return
+        }
+
+        const pendingResult = simulateFiltration(
+          layers,
+          flowRate,
+          initialWaterFromStorm(rainIntensity),
+          { id: `sim-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, timestamp: Date.now() },
+        )
         set({
-          result,
-          history: [result, ...history].slice(0, 12),
-          phase: 'complete',
+          pendingResult,
+          simStatus: 'running',
+          simError: null,
+          treatmentStage: 'filling',
+          stageElapsed: 0,
         })
       },
+
+      /** Frame driver: advances the visual treatment sequence. */
+      advanceTreatment: (dt) => {
+        const s = get()
+        if (s.simStatus !== 'running' || !s.pendingResult) return
+        const duration = TREATMENT.stageDurations[s.treatmentStage as keyof typeof TREATMENT.stageDurations]
+        if (!duration) return
+
+        let elapsed = s.stageElapsed + dt
+        let stage: TreatmentStage = s.treatmentStage
+        while (elapsed >= duration) {
+          elapsed -= duration
+          const next = NEXT_STAGE[stage]
+          if (!next || next === 'done') {
+            // Sequence finished — commit the pending result.
+            const result = s.pendingResult
+            set({
+              treatmentStage: 'done',
+              stageElapsed: 0,
+              simStatus: 'complete',
+              simError: null,
+              result,
+              history: [result, ...s.history].slice(0, 12),
+              phase: 'complete',
+            })
+            return
+          }
+          stage = next
+        }
+        set({ treatmentStage: stage, stageElapsed: elapsed })
+      },
+
+      /**
+       * Full reset: weather, water flow state, filter configuration back
+       * to its default, simulation status and in-scene water visuals.
+       * Historical results are preserved.
+       */
+      resetSimulation: () =>
+        set({
+          phase: 'idle',
+          rainIntensity: RAIN.defaultIntensity,
+          runoffTriggered: false,
+          layers: defaultConfig(),
+          flowRate: DEFAULT_FLOW_RATE,
+          simStatus: 'idle',
+          treatmentStage: 'idle',
+          stageElapsed: 0,
+          simError: null,
+          pendingResult: null,
+          result: null,
+        }),
+
+      clearHistory: () => set({ history: [] }),
 
       /* ------------------------------------------------------------ */
       setPanel: (panel) => set({ panel }),
@@ -153,13 +261,24 @@ export const useSimulationStore = create<SimulationState>()(
     }),
     {
       name: 'agrosorb-simulation',
-      // Only persist user-authored state; transient game phase stays in memory.
+      // Only persist user-authored state; transient treatment state stays in memory.
       partialize: (s) => ({
         layers: s.layers,
         flowRate: s.flowRate,
         history: s.history,
         rainIntensity: s.rainIntensity,
       }),
+      // Rehydration must never resurrect a mid-treatment state.
+      onRehydrateStorage: () => (state) => {
+        if (state && state.simStatus === 'running') {
+          useSimulationStore.setState({
+            simStatus: 'idle',
+            treatmentStage: 'idle',
+            stageElapsed: 0,
+            pendingResult: null,
+          })
+        }
+      },
     },
   ),
 )
@@ -180,13 +299,33 @@ export const selectValidation = (s: SimulationState): ConfigValidation =>
 export const selectTotalDepth = (s: SimulationState): number =>
   s.layers.reduce((sum, l) => sum + l.thickness, 0)
 
-/** Selector: can the simulation run right now? */
+/** Selector: can a new simulation be started right now? */
 export const selectCanRun = (s: SimulationState): boolean =>
-  validateConfig(s.layers).valid && s.layers.length > 0
+  s.layers.length > 0 && validateConfigCached(s.layers).valid && s.simStatus !== 'running'
 
-/** Exposed for the 3D scene color mapping. */
-export const MATERIAL_COLOR_BY_ID = {
-  gravel: MATERIAL_PARAMS.gravel,
-  sand: MATERIAL_PARAMS.sand,
-  carbon: MATERIAL_PARAMS.carbon,
+/**
+ * Selector: overall treatment progress 0..1 across all three stages,
+ * for progress bars in the HUD.
+ */
+export function selectTreatmentProgress(s: SimulationState): number {
+  if (s.simStatus === 'complete') return 1
+  if (s.simStatus !== 'running') return 0
+  const d = TREATMENT.stageDurations
+  const idx = TREATMENT.stageOrder.indexOf(s.treatmentStage as (typeof TREATMENT.stageOrder)[number])
+  if (idx < 0) return 0
+  const done = TREATMENT.stageOrder
+    .slice(0, idx)
+    .reduce((sum: number, k) => sum + d[k], 0)
+  const current = Math.min(s.stageElapsed, d[TREATMENT.stageOrder[idx]])
+  const total = d.filling + d.filtering + d.draining
+  return Math.min(1, (done + current) / total)
+}
+
+/** Human-readable label for the current treatment stage. */
+export const STAGE_LABEL: Record<TreatmentStage, string> = {
+  idle: 'Standby',
+  filling: 'Filling column…',
+  filtering: 'Water passing through filter…',
+  draining: 'Draining to collection tank…',
+  done: 'Treatment complete',
 }

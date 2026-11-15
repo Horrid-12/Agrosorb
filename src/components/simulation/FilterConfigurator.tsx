@@ -22,6 +22,7 @@ export function FilterConfigurator() {
   const validation = useSimulationStore(selectValidation)
   const totalDepth = useSimulationStore(selectTotalDepth)
   const setPanel = useSimulationStore((s) => s.setPanel)
+  const simStatus = useSimulationStore((s) => s.simStatus)
 
   return (
     <div className="flex h-full flex-col">
@@ -42,6 +43,9 @@ export function FilterConfigurator() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
+        {/* Live cross-section preview of the configured column */}
+        <ColumnPreview />
+
         {/* Current stack, top → bottom */}
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-ag-text-dim">
           Layer order (top → bottom)
@@ -145,6 +149,9 @@ export function FilterConfigurator() {
         </div>
 
         {/* Validation feedback */}
+        {simStatus === 'error' && validation.errors.length === 0 && (
+          <Feedback tone="bad" text="Simulation failed — check the configuration and try again." />
+        )}
         {validation.errors.map((err) => (
           <Feedback key={err} tone="bad" text={err} />
         ))}
@@ -158,8 +165,9 @@ export function FilterConfigurator() {
 
       <footer className="border-t border-ag-ui-border/70 p-3">
         <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-          <GameButton onClick={runSimulation} disabled={!validation.valid}>
-            <Sparkles size={15} /> Apply &amp; Run
+          <GameButton onClick={runSimulation} disabled={!validation.valid || simStatus === 'running'}>
+            <Sparkles size={15} />
+            {simStatus === 'running' ? 'Running…' : 'Apply & Run'}
           </GameButton>
           <GameButton variant="secondary" onClick={loadDefaultColumn} title="Load starter column">
             Preset
@@ -173,8 +181,51 @@ export function FilterConfigurator() {
   )
 }
 
-function Feedback({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {
-  const tones = {
+/**
+ * Live 2D cross-section of the configured column, proportional to each
+ * bed's thickness. Matches the 3D model one-to-one.
+ */
+function ColumnPreview() {
+  const layers = useSimulationStore((s) => s.layers)
+  const total = layers.reduce((sum, l) => sum + l.thickness, 0) || 1
+  return (
+    <div className="mb-3 flex gap-3 rounded-xl border border-ag-ui-border bg-ag-ui-light/40 p-3">
+      <div className="flex h-28 w-10 shrink-0 flex-col justify-end overflow-hidden rounded-md border-2 border-ag-ui-border bg-ag-sky/20">
+        {layers.length === 0 && <div className="flex-1" />}
+        {[...layers].reverse().map((l) => (
+          <div
+            key={l.id}
+            title={`${MATERIALS[l.material].name} — ${l.thickness} cm`}
+            style={{
+              background: MATERIALS[l.material].color,
+              height: `${(l.thickness / total) * 100}%`,
+              minHeight: 3,
+            }}
+          />
+        ))}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-ag-text-dim">
+          Cross-section preview
+        </p>
+        {layers.length === 0 ? (
+          <p className="text-[11px] text-ag-text-dim">Empty column — add media below.</p>
+        ) : (
+          layers.map((l, i) => (
+            <div key={l.id} className="flex items-center gap-1.5 text-[11px] text-ag-text-dim">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: MATERIALS[l.material].color }} />
+              <span className="truncate">
+                {i + 1}. {MATERIALS[l.material].name} — {l.thickness} cm
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Feedback({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {  const tones = {
     good: 'border-ag-good/40 bg-ag-good/10 text-ag-good',
     warn: 'border-ag-sand/40 bg-ag-sand/10 text-ag-sand',
     bad: 'border-ag-danger/40 bg-ag-danger/10 text-ag-danger',

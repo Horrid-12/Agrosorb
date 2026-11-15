@@ -28,21 +28,36 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
   const phase = useSimulationStore((s) => s.phase)
   const isMobile = useIsMobile()
   const webglOk = checkWebGL()
+  const simStatus = useSimulationStore((s) => s.simStatus)
 
-  // Sim runs in two steps: trigger runoff, then let the engine take over.
+  // Sim flow: trigger runoff → runoff visuals play → simulation starts
+  // (result computed immediately, then revealed by the treatment animation).
   useEffect(() => {
     if (phase !== 'runoff') return
     const t = setTimeout(() => {
       const store = useSimulationStore.getState()
       if (validateConfig(store.layers).valid) {
         store.runSimulation()
-        store.setPanel('results')
       }
     }, 1800)
     return () => clearTimeout(t)
   }, [phase])
 
+  // Open the relevant panel when the treatment sequence resolves.
+  useEffect(() => {
+    if (simStatus === 'complete') setPanel('results')
+    else if (simStatus === 'error') setPanel('config')
+  }, [simStatus, setPanel])
+
   const canRenderScene = webglOk && !isMobile
+
+  // Without a 3D scene there is no useFrame heartbeat — drive the
+  // treatment sequence with an interval so the loop still completes.
+  useEffect(() => {
+    if (canRenderScene) return
+    const id = setInterval(() => useSimulationStore.getState().advanceTreatment(0.1), 100)
+    return () => clearInterval(id)
+  }, [canRenderScene])
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -103,7 +118,7 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 420, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="absolute bottom-4 right-4 top-[4.5rem] w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ag-ui-border/80 bg-ag-ui/92 shadow-panel"
+            className="absolute bottom-4 right-4 top-[4.5rem] z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ag-ui-border/80 bg-ag-ui/92 shadow-panel"
             aria-label={`${panel} panel`}
           >
             {panel === 'config' && <FilterConfigurator />}

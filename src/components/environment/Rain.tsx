@@ -39,6 +39,13 @@ export function Rain() {
     const speed = active ? (0.35 + rainIntensity) * stormBoost : 0
 
     if (pointsRef.current) {
+      // Rainfall intensity drives PARTICLE DENSITY (draw range), plus a
+      // modest fall-speed boost — drizzle and storm read differently.
+      const visibleCount = active
+        ? Math.floor(DROP_COUNT * (0.2 + 0.8 * rainIntensity))
+        : 0
+      pointsRef.current.geometry.setDrawRange(0, visibleCount)
+
       const attr = pointsRef.current.geometry.attributes.position as THREE.BufferAttribute
       const arr = attr.array as Float32Array
       for (let i = 0; i < DROP_COUNT; i++) {
@@ -53,7 +60,7 @@ export function Rain() {
     }
 
     if (matRef.current) {
-      const targetOpacity = !active || rainIntensity <= 0.01 ? 0 : 0.15 + rainIntensity * 0.45
+      const targetOpacity = !active || rainIntensity <= 0.01 ? 0 : 0.35 + rainIntensity * 0.3
       matRef.current.opacity += (targetOpacity - matRef.current.opacity) * Math.min(1, dt * 4)
       pointsRef.current!.visible = matRef.current.opacity > 0.02
     }

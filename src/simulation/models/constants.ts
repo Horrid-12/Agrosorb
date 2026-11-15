@@ -58,3 +58,36 @@ export const RAIN = {
   /** Intensity above which surface runoff becomes visible. */
   runoffThreshold: 0.65,
 } as const
+
+/**
+ * Adsorption fouling (documented assumption). Suspended particles that
+ * reach an adsorbent bed before finer media clog its pores, reducing
+ * effective adsorption capacity. Multiplier applied to a bed's
+ * adsorption coefficient:
+ *
+ *     m = 1 − ADSORPTION_FOULING · (T_entering / T_initial)
+ *
+ * This is what makes layer ORDER educationally meaningful: sand above
+ * activated carbon shields it and preserves its capacity.
+ */
+export const ADSORPTION_FOULING = 0.4
+
+/**
+ * Animated treatment sequence. When a simulation runs, water visually
+ * passes through three stages before the result is committed:
+ *
+ *   filling   — influent water rises in the filter column
+ *   filtering — water percolates through the media beds (layers wet up)
+ *   draining  — treated water flows through the outlet into the tank
+ *
+ * Durations are in seconds. The engine math itself is instantaneous and
+ * deterministic; these stages only sequence the *visualization*.
+ */
+export const TREATMENT = {
+  stageOrder: ['filling', 'filtering', 'draining'] as const,
+  stageDurations: {
+    filling: 2.4,
+    filtering: 3.6,
+    draining: 2.8,
+  },
+} as const

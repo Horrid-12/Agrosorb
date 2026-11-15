@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 import type { MeshStandardMaterial } from 'three'
-import { LAYOUT } from './layout'
+import { LAYOUT, RUNOFF_PATHS, samplePolyline } from './layout'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { RAIN } from '@/simulation/models/constants'
 
@@ -63,6 +64,11 @@ export function Channels() {
   const rainIntensity = useSimulationStore((s) => s.rainIntensity)
   const phase = useSimulationStore((s) => s.phase)
 
+  // Runoff visibly flows toward the collection system during a runoff
+  // event, or under sustained heavy rain.
+  const flowActive =
+    phase === 'runoff' || (phase === 'raining' && rainIntensity >= RAIN.runoffThreshold)
+
   const puddleMats = useRef<(MeshStandardMaterial | null)[]>([])
 
   useFrame((_, dt) => {
@@ -93,6 +99,11 @@ export function Channels() {
       <WaterSurface width={cross.xMax - cross.xMin} depth={cross.zMax - cross.zMin} position={[(cross.xMin + cross.xMax) / 2, 0.2, (cross.zMin + cross.zMax) / 2]} opacity={0.8} ripple={false} />
       <WaterSurface width={outlet.xMax - outlet.xMin} depth={outlet.zMax - outlet.zMin} position={[(outlet.xMin + outlet.xMax) / 2, 0.2, (outlet.zMin + outlet.zMax) / 2]} opacity={0.65} ripple={false} />
 
+      {/* Runoff pulses travelling field → channels → station inlet */}
+      {RUNOFF_PATHS.map((path, i) => (
+        <RunoffPulses key={i} path={path} active={flowActive} />
+      ))}
+
       {/* Runoff puddles on the fields (fade with storm intensity) */}
       {puddles.map(([x, z], i) => (
         <mesh key={i} position={[x, 0.28, z]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -106,6 +117,54 @@ export function Channels() {
             opacity={0}
             roughness={0.25}
           />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+const PULSES_PER_PATH = 6
+const PULSE_SPEED = 0.09 // polyline loops per second
+
+/**
+ * Small water packets advancing along a runoff flow path, visualizing
+ * polluted water travelling from the fields toward the collection
+ * system. Cheap: 6 small boxes per path, no instancing needed.
+ */
+function RunoffPulses({
+  path,
+  active,
+}: {
+  path: Array<[number, number]>
+  active: boolean
+}) {
+  const refs = useRef<(THREE.Mesh | null)[]>([])
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime * PULSE_SPEED
+    for (let i = 0; i < PULSES_PER_PATH; i++) {
+      const m = refs.current[i]
+      if (!m) continue
+      m.visible = active
+      if (active) {
+        const [x, z] = samplePolyline(path, (t + i / PULSES_PER_PATH) % 1)
+        m.position.set(x, 0.27, z)
+      }
+    }
+  })
+
+  return (
+    <group>
+      {Array.from({ length: PULSES_PER_PATH }, (_, i) => (
+        <mesh
+          key={i}
+          visible={false}
+          ref={(m) => {
+            refs.current[i] = m
+          }}
+        >
+          <boxGeometry args={[0.55, 0.14, 0.55]} />
+          <meshStandardMaterial color="#7fc4e8" transparent opacity={0.75} roughness={0.3} />
         </mesh>
       ))}
     </group>

@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Sky } from '@react-three/drei'
 import { CropField } from '@/components/environment/CropField'
 import { Channels } from '@/components/environment/Channels'
@@ -54,6 +54,7 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
 
       <Suspense fallback={null}>
         <Lighting />
+        <TreatmentDriver />
         <Terrain />
         <CropField rect={LAYOUT.fields.A} seed={11} />
         <CropField rect={LAYOUT.fields.B} seed={23} />
@@ -79,6 +80,17 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
       />
     </Canvas>
   )
+}
+
+/**
+ * Frame driver for the treatment state machine. Lives inside the Canvas
+ * so `useFrame` can advance the store's visual treatment sequence; all
+ * logic stays in the store, this is just the heartbeat.
+ */
+function TreatmentDriver() {
+  const advanceTreatment = useSimulationStore((s) => s.advanceTreatment)
+  useFrame((_, dt) => advanceTreatment(Math.min(dt, 0.1)))
+  return null
 }
 
 /** Atmospheric lighting: warm sun, sky bounce, soft shadows. */

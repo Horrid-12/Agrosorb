@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { motion } from 'framer-motion'
-import { ArrowRight, FlaskConical, Info, X } from 'lucide-react'
+import { ArrowRight, FlaskConical, Info, Trash2, X } from 'lucide-react'
 import { StatBadge } from '@/components/ui/GameButton'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { MATERIALS } from '@/data/materials'
@@ -27,6 +27,7 @@ export function ResultsDashboard() {
   const result = useSimulationStore((s) => s.result)
   const history = useSimulationStore((s) => s.history)
   const setPanel = useSimulationStore((s) => s.setPanel)
+  const clearHistory = useSimulationStore((s) => s.clearHistory)
 
   if (!result) {
     return (
@@ -110,13 +111,8 @@ export function ResultsDashboard() {
               <XAxis dataKey="metric" tick={{ fill: '#9db8a8', fontSize: 11 }} axisLine={{ stroke: '#2e4a3a' }} tickLine={false} />
               <YAxis tick={{ fill: '#9db8a8', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
               <Tooltip
-                contentStyle={{
-                  background: '#18251f',
-                  border: '1px solid #2e4a3a',
-                  borderRadius: 10,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: '#e8f1ea' }}
+                content={<SimTooltip />}
+                cursor={{ fill: 'rgba(46, 74, 58, 0.25)' }}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="initial" name="Initial (simulated)" fill="#5c8a47" radius={[4, 4, 0, 0]} />
@@ -160,9 +156,21 @@ export function ResultsDashboard() {
         </div>
 
         {/* History */}
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-ag-text-dim">
-          Experiment history ({history.length})
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-ag-text-dim">
+            Experiment history ({history.length})
+          </p>
+          {history.length > 0 && (
+            <button
+              onClick={clearHistory}
+              aria-label="Clear simulation history"
+              title="Clear history"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold text-ag-text-dim transition hover:bg-ag-ui-light hover:text-ag-danger"
+            >
+              <Trash2 size={11} /> Clear
+            </button>
+          )}
+        </div>
         <div className="space-y-1.5 pb-2">
           {history.map((h) => (
             <div key={h.id} className="flex items-center gap-2 rounded-lg border border-ag-ui-border/60 bg-ag-ui-light/40 px-2.5 py-1.5">
@@ -181,8 +189,33 @@ export function ResultsDashboard() {
   )
 }
 
-function DashboardHeader({ onClose }: { onClose: () => void }) {
+/**
+ * Custom themed tooltip — Recharts' default tooltip styling is not
+ * reliable across versions, so we render our own dark green card.
+ */
+function SimTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: Array<{ name?: string; value?: number | string; color?: string; dataKey?: string | number }>
+  label?: string | number
+}) {
+  if (!active || !payload || payload.length === 0) return null
   return (
+    <div className="rounded-xl border border-ag-ui-border bg-ag-ui px-3 py-2 shadow-panel">
+      <p className="mb-1 text-[11px] font-bold text-ag-text">{label}</p>
+      {payload.map((entry) => (
+        <p key={String(entry.dataKey)} className="text-[11px]" style={{ color: entry.color }}>
+          {entry.name} : {entry.value}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+function DashboardHeader({ onClose }: { onClose: () => void }) {  return (
     <header className="flex items-center justify-between border-b border-ag-ui-border/70 px-4 py-3">
       <h2 className="font-display text-sm font-bold tracking-wide text-ag-text">Results Dashboard</h2>
       <button
