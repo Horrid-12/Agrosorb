@@ -57,4 +57,67 @@ export interface ConfigValidation {
 
 export type SimPhase = 'idle' | 'raining' | 'runoff' | 'complete'
 
-export type HudPanel = 'config' | 'results' | 'learn' | null
+export type HudPanel = 'config' | 'results' | 'learn' | 'experiments' | null
+
+/* ------------------------------------------------------------------ *
+ * Experiment Mode
+ * ------------------------------------------------------------------ */
+
+export type ScenarioId = 'muddy-river' | 'chemical-runoff' | 'filter-optimization'
+
+/** 'free' is the sandbox mode with no objectives. */
+export type GameMode = 'free' | ScenarioId
+
+export type ObjectiveMetric =
+  | 'turbidityRemoval'
+  | 'contaminantRemoval'
+  | 'overallEfficiency'
+  | 'finalTurbidity'
+  | 'finalContaminant'
+  | 'finalPH'
+  | 'totalDepth'
+  | 'contactTime'
+  | 'cost'
+
+export interface Objective {
+  id: string
+  text: string
+  metric: ObjectiveMetric
+  op: '<' | '<=' | '>' | '>='
+  target: number
+  /** Display unit for the measured value (%, NTU, mg/L, cm, credits…). */
+  unit: string
+}
+
+/** An objective evaluated against an ACTUAL simulation result. */
+export interface ObjectiveResult extends Objective {
+  passed: boolean
+  actual: number
+}
+
+export interface Scenario {
+  id: ScenarioId
+  name: string
+  tagline: string
+  brief: string
+  /** Conditions applied when the scenario starts. */
+  start: { rainIntensity: number; flowRate: number }
+  /** Illustrative influent composition (simulated, overrides storm baseline). */
+  water: Partial<WaterQuality>
+  /** Optional material budget (total bed depth, cm). */
+  budget?: number
+  objectives: Objective[]
+}
+
+export interface SavedExperiment {
+  id: string
+  name: string
+  timestamp: number
+  scenarioId: GameMode
+  result: SimResult
+  /** Illustrative material cost (credits). */
+  cost: number
+  /** Objectives evaluated against the actual result (null in free mode). */
+  evaluation: ObjectiveResult[] | null
+  passed: boolean
+}

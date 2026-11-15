@@ -9,9 +9,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowRight, FlaskConical, Info, Trash2, X } from 'lucide-react'
+import { ArrowRight, FlaskConical, Info, Save, Trash2, X } from 'lucide-react'
 import { StatBadge } from '@/components/ui/GameButton'
+import { SimTooltip } from '@/components/dashboard/SimTooltip'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { MATERIALS } from '@/data/materials'
 import { describeConfig } from '@/simulation/engine/filtrationEngine'
@@ -68,6 +70,9 @@ export function ResultsDashboard() {
             {result.overallEfficiency.toFixed(1)}%
           </div>
         </motion.div>
+
+        {/* Save as named experiment (Experiment Mode) */}
+        <SaveExperimentRow />
 
         {/* Before / after */}
         <div className="mb-3 grid grid-cols-2 gap-2">
@@ -190,32 +195,51 @@ export function ResultsDashboard() {
 }
 
 /**
- * Custom themed tooltip — Recharts' default tooltip styling is not
- * reliable across versions, so we render our own dark green card.
+ * Save-as-named-experiment row. Only appears when a committed result
+ * exists; saving records the ACTUAL result — nothing is hardcoded.
  */
-function SimTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean
-  payload?: Array<{ name?: string; value?: number | string; color?: string; dataKey?: string | number }>
-  label?: string | number
-}) {
-  if (!active || !payload || payload.length === 0) return null
+function SaveExperimentRow() {
+  const result = useSimulationStore((s) => s.result)
+  const saveExperiment = useSimulationStore((s) => s.saveExperiment)
+  const [name, setName] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  if (!result) return null
   return (
-    <div className="rounded-xl border border-ag-ui-border bg-ag-ui px-3 py-2 shadow-panel">
-      <p className="mb-1 text-[11px] font-bold text-ag-text">{label}</p>
-      {payload.map((entry) => (
-        <p key={String(entry.dataKey)} className="text-[11px]" style={{ color: entry.color }}>
-          {entry.name} : {entry.value}
-        </p>
-      ))}
-    </div>
+    <form
+      className="mb-3 flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        saveExperiment(name)
+        setName('')
+        setSaved(true)
+        setTimeout(() => setSaved(false), 1800)
+      }}
+    >
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Name this experiment…"
+        aria-label="Experiment name"
+        maxLength={28}
+        className="min-w-0 flex-1 rounded-xl border border-ag-ui-border bg-ag-ui-light/70 px-3 py-2 text-xs text-ag-text placeholder:text-ag-text-dim/60 focus:border-ag-fresh focus:outline-none"
+      />
+      <button
+        type="submit"
+        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+          saved
+            ? 'border-ag-good/50 bg-ag-good/15 text-ag-good'
+            : 'border-ag-ui-border bg-ag-ui-light/70 text-ag-text hover:border-ag-fresh hover:text-ag-fresh'
+        }`}
+      >
+        <Save size={13} /> {saved ? 'Saved' : 'Save'}
+      </button>
+    </form>
   )
 }
 
-function DashboardHeader({ onClose }: { onClose: () => void }) {  return (
+function DashboardHeader({ onClose }: { onClose: () => void }) {
+  return (
     <header className="flex items-center justify-between border-b border-ag-ui-border/70 px-4 py-3">
       <h2 className="font-display text-sm font-bold tracking-wide text-ag-text">Results Dashboard</h2>
       <button

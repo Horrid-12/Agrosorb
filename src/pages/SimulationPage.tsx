@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { FlaskConical, GraduationCap, BarChart3, Home } from 'lucide-react'
+import { FlaskConical, GraduationCap, BarChart3, Beaker, Home } from 'lucide-react'
 import { useKeyboardControls } from '@/hooks/useKeyboardControls'
 import { useIsMobile, checkWebGL } from '@/hooks/useMediaQuery'
 import { validateConfig } from '@/simulation/engine/filtrationEngine'
@@ -10,6 +10,7 @@ import { SimulationControls } from '@/components/simulation/SimulationControls'
 import { FilterConfigurator } from '@/components/simulation/FilterConfigurator'
 import { ResultsDashboard } from '@/components/dashboard/ResultsDashboard'
 import { LearningPanel } from '@/components/learn/LearningPanel'
+import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { lazy, Suspense } from 'react'
 
@@ -26,6 +27,7 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
   const panel = useSimulationStore((s) => s.panel)
   const setPanel = useSimulationStore((s) => s.setPanel)
   const phase = useSimulationStore((s) => s.phase)
+  const activeScenario = useSimulationStore((s) => s.activeScenario)
   const isMobile = useIsMobile()
   const webglOk = checkWebGL()
   const simStatus = useSimulationStore((s) => s.simStatus)
@@ -93,12 +95,18 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
             <span className="rounded-full border border-ag-ui-border bg-ag-ui/85 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ag-text-dim">
               {phase}
             </span>
+            {activeScenario !== 'free' && (
+              <span className="rounded-full border border-ag-fresh/50 bg-ag-fresh/15 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-ag-fresh">
+                {activeScenario.replace('-', ' ')}
+              </span>
+            )}
           </div>
 
           {/* Panel switcher */}
           <div className="pointer-events-auto flex gap-2">
             <PanelTab active={panel === 'config'} onClick={() => toggle(panel, setPanel, 'config')} icon={<FlaskConical size={15} />} label="Filter" hint="C" />
             <PanelTab active={panel === 'results'} onClick={() => toggle(panel, setPanel, 'results')} icon={<BarChart3 size={15} />} label="Results" hint="R" />
+            <PanelTab active={panel === 'experiments'} onClick={() => toggle(panel, setPanel, 'experiments')} icon={<Beaker size={15} />} label="Lab" hint="E" />
             <PanelTab active={panel === 'learn'} onClick={() => toggle(panel, setPanel, 'learn')} icon={<GraduationCap size={15} />} label="Learn" />
           </div>
         </div>
@@ -123,6 +131,7 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
           >
             {panel === 'config' && <FilterConfigurator />}
             {panel === 'results' && <ResultsDashboard />}
+            {panel === 'experiments' && <ExperimentsPanel />}
             {panel === 'learn' && <LearningPanel />}
           </motion.aside>
         )}
@@ -133,8 +142,8 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
 
 function toggle(
   current: string | null,
-  setPanel: (p: 'config' | 'results' | 'learn' | null) => void,
-  id: 'config' | 'results' | 'learn',
+  setPanel: (p: 'config' | 'results' | 'learn' | 'experiments' | null) => void,
+  id: 'config' | 'results' | 'learn' | 'experiments',
 ) {
   setPanel(current === id ? null : id)
 }

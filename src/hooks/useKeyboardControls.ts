@@ -36,6 +36,10 @@ export function useKeyboardControls() {
         case 'R':
           store.setPanel(store.panel === 'results' ? null : 'results')
           break
+        case 'e':
+        case 'E':
+          store.setPanel(store.panel === 'experiments' ? null : 'experiments')
+          break
         case 'Escape':
           if (store.panel) store.setPanel(null)
           break

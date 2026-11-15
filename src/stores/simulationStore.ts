@@ -15,11 +15,18 @@ import {
   TREATMENT,
 } from '@/simulation/models/constants'
 import {
+  estimateMaterialCost,
+  evaluateObjectives,
+  initialWaterForScenario,
+} from '@/simulation/calculations/metrics'
+import {
   initialWaterFromStorm,
   simulateFiltration,
   validateConfig,
   validateConfigCached,
 } from '@/simulation/engine/filtrationEngine'
+import { SCENARIOS } from '@/data/scenarios'
+import type { GameMode, ObjectiveResult, SavedExperiment } from '@/types'
 
 let nextLayerId = 1
 const makeLayerId = () => `layer-${nextLayerId++}`
@@ -69,6 +76,12 @@ interface SimulationState {
   result: SimResult | null
   history: SimResult[]
 
+  /* Experiment Mode */
+  activeScenario: GameMode
+  /** Objectives evaluated against the last committed result (null in free mode). */
+  lastEvaluation: ObjectiveResult[] | null
+  savedExperiments: SavedExperiment[]
+
   /* HUD */
   panel: HudPanel
   stationInspecting: boolean
@@ -97,6 +110,12 @@ interface SimulationState {
   resetSimulation: () => void
   clearHistory: () => void
 
+  /* Actions — Experiment Mode */
+  startScenario: (id: GameMode) => void
+  exitScenario: () => void
+  saveExperiment: (name: string) => void
+  deleteExperiment: (id: string) => void
+
   /* Actions — HUD */
   setPanel: (panel: HudPanel) => void
   setStationInspecting: (v: boolean) => void
@@ -120,6 +139,10 @@ export const useSimulationStore = create<SimulationState>()(
 
       result: null,
       history: [],
+
+      activeScenario: 'free',
+      lastEvaluation: null,
+      savedExperiments: [],
 
       panel: null,
       stationInspecting: false,
@@ -178,7 +201,7 @@ export const useSimulationStore = create<SimulationState>()(
        * is only committed to `result`/`history` when the animation ends.
        */
       runSimulation: () => {
-        const { layers, flowRate, rainIntensity, simStatus } = get()
+        const { layers, flowRate, rainIntensity, simStatus, activeScenario } = get()
         if (simStatus === 'running') return
 
         const validation = validateConfig(layers)
@@ -187,10 +210,17 @@ export const useSimulationStore = create<SimulationState>()(
           return
         }
 
+        // Scenario mode uses the scenario's illustrative influent
+        // composition; free mode scales with the current storm.
+        const initial =
+          activeScenario !== 'free'
+            ? initialWaterForScenario(SCENARIOS[activeScenario], rainIntensity)
+            : initialWaterFromStorm(rainIntensity)
+
         const pendingResult = simulateFiltration(
           layers,
           flowRate,
-          initialWaterFromStorm(rainIntensity),
+          initial,
           { id: `sim-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, timestamp: Date.now() },
         )
         set({
@@ -215,14 +245,20 @@ export const useSimulationStore = create<SimulationState>()(
           elapsed -= duration
           const next = NEXT_STAGE[stage]
           if (!next || next === 'done') {
-            // Sequence finished — commit the pending result.
+            // Sequence finished — commit the pending result and evaluate
+            // the active scenario's objectives against the ACTUAL output.
             const result = s.pendingResult
+            const evaluation =
+              s.activeScenario !== 'free'
+                ? evaluateObjectives(result, SCENARIOS[s.activeScenario])
+                : null
             set({
               treatmentStage: 'done',
               stageElapsed: 0,
               simStatus: 'complete',
               simError: null,
               result,
+              lastEvaluation: evaluation,
               history: [result, ...s.history].slice(0, 12),
               phase: 'complete',
             })
@@ -236,24 +272,72 @@ export const useSimulationStore = create<SimulationState>()(
       /**
        * Full reset: weather, water flow state, filter configuration back
        * to its default, simulation status and in-scene water visuals.
-       * Historical results are preserved.
+       * In scenario mode, conditions return to the scenario's START
+       * values instead of free-mode defaults. History and saved
+       * experiments are preserved.
        */
-      resetSimulation: () =>
+      resetSimulation: () => {
+        const s = get()
+        const scenario = s.activeScenario !== 'free' ? SCENARIOS[s.activeScenario] : null
         set({
           phase: 'idle',
-          rainIntensity: RAIN.defaultIntensity,
+          rainIntensity: scenario?.start.rainIntensity ?? RAIN.defaultIntensity,
           runoffTriggered: false,
           layers: defaultConfig(),
-          flowRate: DEFAULT_FLOW_RATE,
+          flowRate: scenario?.start.flowRate ?? DEFAULT_FLOW_RATE,
           simStatus: 'idle',
           treatmentStage: 'idle',
           stageElapsed: 0,
           simError: null,
           pendingResult: null,
           result: null,
-        }),
+          lastEvaluation: null,
+        })
+      },
 
       clearHistory: () => set({ history: [] }),
+
+      /* ------------------------------------------------------------ */
+      /** Enter a scenario (or 'free' mode) and apply its start conditions. */
+      startScenario: (id) => {
+        const scenario = id !== 'free' ? SCENARIOS[id] : null
+        set({
+          activeScenario: id,
+          phase: 'idle',
+          runoffTriggered: false,
+          rainIntensity: scenario?.start.rainIntensity ?? RAIN.defaultIntensity,
+          flowRate: scenario?.start.flowRate ?? DEFAULT_FLOW_RATE,
+          simStatus: 'idle',
+          treatmentStage: 'idle',
+          stageElapsed: 0,
+          simError: null,
+          pendingResult: null,
+          result: null,
+          lastEvaluation: null,
+        })
+      },
+
+      exitScenario: () => get().startScenario('free'),
+
+      /** Save the committed result as a named experiment. */
+      saveExperiment: (name) => {
+        const { result, lastEvaluation, activeScenario, savedExperiments } = get()
+        if (!result) return
+        const experiment: SavedExperiment = {
+          id: `exp-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+          name: name.trim() || `Run ${savedExperiments.length + 1}`,
+          timestamp: Date.now(),
+          scenarioId: activeScenario,
+          result,
+          cost: estimateMaterialCost(result.config),
+          evaluation: lastEvaluation,
+          passed: !!lastEvaluation && lastEvaluation.every((o) => o.passed),
+        }
+        set({ savedExperiments: [experiment, ...savedExperiments].slice(0, 30) })
+      },
+
+      deleteExperiment: (id) =>
+        set({ savedExperiments: get().savedExperiments.filter((e) => e.id !== id) }),
 
       /* ------------------------------------------------------------ */
       setPanel: (panel) => set({ panel }),
@@ -267,6 +351,8 @@ export const useSimulationStore = create<SimulationState>()(
         flowRate: s.flowRate,
         history: s.history,
         rainIntensity: s.rainIntensity,
+        activeScenario: s.activeScenario,
+        savedExperiments: s.savedExperiments,
       }),
       // Rehydration must never resurrect a mid-treatment state.
       onRehydrateStorage: () => (state) => {

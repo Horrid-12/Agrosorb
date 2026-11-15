@@ -4,6 +4,7 @@ import { GameButton } from '@/components/ui/GameButton'
 import { useSimulationStore, selectTotalDepth, selectValidation } from '@/stores/simulationStore'
 import { MATERIALS, MATERIAL_ORDER } from '@/data/materials'
 import { COLUMN_LIMITS } from '@/simulation/models/constants'
+import { SCENARIOS } from '@/data/scenarios'
 
 /**
  * Filter configuration interface. Layers are ordered top → bottom
@@ -23,6 +24,8 @@ export function FilterConfigurator() {
   const totalDepth = useSimulationStore(selectTotalDepth)
   const setPanel = useSimulationStore((s) => s.setPanel)
   const simStatus = useSimulationStore((s) => s.simStatus)
+  const activeScenario = useSimulationStore((s) => s.activeScenario)
+  const scenarioBudget = activeScenario !== 'free' ? SCENARIOS[activeScenario].budget : undefined
 
   return (
     <div className="flex h-full flex-col">
@@ -31,6 +34,12 @@ export function FilterConfigurator() {
           <h2 className="font-display text-sm font-bold tracking-wide text-ag-text">Filter Column</h2>
           <p className="font-mono text-[10px] text-ag-text-dim">
             {layers.length}/{COLUMN_LIMITS.maxLayers} layers · {totalDepth.toFixed(1)}/{COLUMN_LIMITS.maxTotalThickness} cm
+            {scenarioBudget && (
+              <span className={totalDepth > scenarioBudget ? ' text-ag-danger' : ' text-ag-fresh'}>
+                {' '}
+                · Budget {totalDepth.toFixed(1)}/{scenarioBudget} cm
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -149,6 +158,12 @@ export function FilterConfigurator() {
         </div>
 
         {/* Validation feedback */}
+        {scenarioBudget && totalDepth > scenarioBudget && (
+          <Feedback
+            tone="warn"
+            text={`Scenario budget exceeded: ${totalDepth.toFixed(1)} cm of media used, limit ${scenarioBudget} cm. This configuration cannot meet the budget objective.`}
+          />
+        )}
         {simStatus === 'error' && validation.errors.length === 0 && (
           <Feedback tone="bad" text="Simulation failed — check the configuration and try again." />
         )}
