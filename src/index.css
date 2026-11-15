@@ -1,0 +1,132 @@
+@import 'tailwindcss';
+
+/*
+ * AgroSorb design tokens.
+ * The palette follows the project's environmental art direction:
+ * forest/fresh greens for land, blues for water, earth tones for soil
+ * and dark green UI surfaces that keep the 3D view as the focus.
+ */
+@theme {
+  --color-ag-forest: #244d35;
+  --color-ag-fresh: #76a85b;
+  --color-ag-fresh-dark: #5c8a47;
+  --color-ag-water: #4299c7;
+  --color-ag-water-deep: #2f77a3;
+  --color-ag-soil: #795438;
+  --color-ag-soil-dark: #5d4029;
+  --color-ag-sand: #d8c49a;
+  --color-ag-carbon: #343434;
+  --color-ag-sky: #b9d9e8;
+  --color-ag-ui: #18251f;
+  --color-ag-ui-light: #21352a;
+  --color-ag-ui-border: #2e4a3a;
+  --color-ag-text: #e8f1ea;
+  --color-ag-text-dim: #9db8a8;
+  --color-ag-danger: #d97757;
+  --color-ag-warn: #e2b644;
+  --color-ag-good: #7fc98a;
+
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-panel: 0 10px 40px rgb(0 0 0 / 0.35);
+  --shadow-glow: 0 0 24px rgb(66 153 199 / 0.35);
+
+  --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  --animate-drift: drift 7s ease-in-out infinite;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-display);
+  background: var(--color-ag-ui);
+  color: var(--color-ag-text);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Thin themed scrollbars for HUD panels */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ag-ui-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ag-ui-border);
+  border-radius: 999px;
+}
+
+canvas {
+  touch-action: none;
+}
+
+/* Range sliders styled to the theme */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-ag-fresh) var(--fill, 50%),
+    color-mix(in srgb, var(--color-ag-ui-border) 70%, transparent) var(--fill, 50%)
+  );
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-ag-sand);
+  border: 2px solid var(--color-ag-forest);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+}
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-ag-sand);
+  border: 2px solid var(--color-ag-forest);
+  cursor: pointer;
+}
+input[type='range']:focus-visible {
+  outline: 2px solid var(--color-ag-fresh);
+  outline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ag-fresh);
+  outline-offset: 2px;
+}
