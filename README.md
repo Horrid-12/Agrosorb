@@ -1,10 +1,10 @@
-# AgroSorb 🌾💧
+# AgroSorb
 
 An interactive, game-themed **environmental engineering simulator**: treat agricultural
 runoff through **physical filtration** and **activated carbon adsorption** inside a
 low-poly 3D farm diorama.
 
-> ⚠️ **Educational disclaimer** — every water-quality figure in AgroSorb is produced by a
+> **Educational disclaimer** — every water-quality figure in AgroSorb is produced by a
 > documented, deterministic educational model. Values are **simulated**, never laboratory
 > measurements. The "contaminant" is a generic model compound, not a real pesticide.
 
