@@ -23,7 +23,7 @@ React 18 · TypeScript · Vite · Three.js (React Three Fiber + drei) · Tailwin
 Framer Motion · Zustand · Recharts · Lucide React
 
 ## Architecture
-
+[![Architecture diagram for Agrosorb](https://gitdiagram.com/horrid-12/agrosorb/diagram.png)](https://gitdiagram.com/horrid-12/agrosorb?utm_source=readme&utm_medium=picture)
 ```
 src/
   components/

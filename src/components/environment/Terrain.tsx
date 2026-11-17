@@ -2,11 +2,8 @@ import { useMemo } from 'react'
 import { LAYOUT, mulberry32 } from './layout'
 
 /**
- * Low-poly terrain: a solid ground slab (so the edges read like a
- * diorama), raised soil beds under each crop field, sand paths and
- * back-edge plateaus for silhouette variety.
- *
- * All geometry is static boxes — cheap to render, easy to shadow.
+ * Terrain with an infinite-feeling ground plane that blends into fog,
+ * plus raised soil beds, sand paths and back-edge plateaus.
  */
 export function Terrain() {
   const { fields } = LAYOUT
@@ -26,12 +23,22 @@ export function Terrain() {
 
   return (
     <group>
-      {/* Ground slab — soil sides give the diorama edge look */}
+      {/*
+       * Infinite ground plane — a huge disc that extends well past the
+       * fog distance so there is never a visible edge. The color matches
+       * the main grass surface; fog fades it into the sky.
+       */}
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
+        <circleGeometry args={[500, 64]} />
+        <meshStandardMaterial color="#6f9c53" roughness={0.95} />
+      </mesh>
+
+      {/* Original ground slab sits on top — provides the diorama detail zone */}
       <mesh receiveShadow position={[0, -1.1, 0]}>
         <boxGeometry args={[LAYOUT.groundSize, 2.2, LAYOUT.groundSize]} />
         <meshStandardMaterial color="#6d4b31" roughness={1} />
       </mesh>
-      {/* Grass surface */}
+      {/* Grass surface (detail zone) */}
       <mesh receiveShadow position={[0, 0.001, 0]}>
         <boxGeometry args={[LAYOUT.groundSize, 0.06, LAYOUT.groundSize]} />
         <meshStandardMaterial color="#6f9c53" roughness={0.95} />

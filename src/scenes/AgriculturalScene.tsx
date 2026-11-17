@@ -50,7 +50,7 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
       }}
     >
       <color attach="background" args={['#b9d9e8']} />
-      <fog attach="fog" args={['#b9d9e8', 70, 150]} />
+      <fog attach="fog" args={['#b9d9e8', 60, 200]} />
 
       <Suspense fallback={null}>
         <Lighting />
