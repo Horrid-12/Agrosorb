@@ -1,11 +1,12 @@
 import { Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Sky } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import { CropField } from '@/components/environment/CropField'
 import { Channels } from '@/components/environment/Channels'
 import { FiltrationStation } from '@/components/environment/FiltrationStation'
 import { Rain } from '@/components/environment/Rain'
 import { Scenery } from '@/components/environment/Scenery'
+import { SkyBackdrop, SKY_HORIZON } from '@/components/environment/SkyBackdrop'
 import { Terrain } from '@/components/environment/Terrain'
 import { LAYOUT } from '@/components/environment/layout'
 import { useSimulationStore } from '@/stores/simulationStore'
@@ -49,8 +50,11 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
         }
       }}
     >
-      <color attach="background" args={['#b9d9e8']} />
-      <fog attach="fog" args={['#b9d9e8', 60, 200]} />
+      {/* Fallback clear colour (the dome covers it) + fog matched to the
+          sky's horizon band so the terrain edge dissolves into haze. */}
+      <color attach="background" args={[SKY_HORIZON]} />
+      <fog attach="fog" args={[SKY_HORIZON, 70, 150]} />
+      <SkyBackdrop />
 
       <Suspense fallback={null}>
         <Lighting />
@@ -113,7 +117,6 @@ function Lighting() {
         shadow-bias={-0.0004}
       />
       <ambientLight intensity={0.25} />
-      <Sky distance={4000} sunPosition={[24, 18, 14]} turbidity={7} rayleigh={2.4} />
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import type { CSSProperties } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -14,6 +15,32 @@ const WET_TINT = new THREE.Color('#4299c7')
 const PIPE_MATERIAL = (
   <meshStandardMaterial color="#8b9aa3" roughness={0.5} metalness={0.3} />
 )
+
+/**
+ * In-scene Html labels fade out and stop taking clicks while a HUD panel
+ * is open, so they never peek out from under (or fight with) the panel.
+ */
+function labelStyle(hidden: boolean): CSSProperties {
+  return {
+    opacity: hidden ? 0 : 1,
+    transition: 'opacity 160ms ease',
+    pointerEvents: hidden ? 'none' : 'auto',
+  }
+}
+
+/**
+ * Spherical elbow joint where two pipe segments meet. Two cylinders
+ * joined at an angle leave a wedge-shaped gap; a sphere of matching
+ * radius rounds the corner so the run reads as one continuous pipe.
+ */
+function PipeJoint({ at, radius = 0.28 }: { at: [number, number, number]; radius?: number }) {
+  return (
+    <mesh castShadow position={at}>
+      <sphereGeometry args={[radius, 12, 10]} />
+      {PIPE_MATERIAL}
+    </mesh>
+  )
+}
 
 /**
  * A pipe segment drawn between two exact 3D points. Using endpoints
@@ -232,6 +259,7 @@ export function FiltrationStation() {
       </mesh>
       {/* Run diagonally from the cap across to the tank, then drop into it */}
       <Pipe from={[11.6, 6.55, 16.5]} to={[22, 5.5, 19.4]} />
+      <PipeJoint at={[22, 5.5, 19.4]} />
       <Pipe from={[22, 5.5, 19.4]} to={[22, 2.3, 19.4]} />
       <OutletFlow />
 
@@ -246,7 +274,13 @@ export function FiltrationStation() {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      <Html position={[station.x, 8.4, station.z]} center distanceFactor={26} zIndexRange={[10, 0]}>
+      <Html
+        position={[station.x, 8.4, station.z]}
+        center
+        distanceFactor={26}
+        zIndexRange={[10, 0]}
+        style={labelStyle(panel != null)}
+      >
         <button
           onClick={openConfig}
           className="whitespace-nowrap rounded-full border border-ag-ui-border bg-ag-ui/85 px-3 py-1 text-[11px] font-semibold text-ag-sand shadow-panel transition hover:bg-ag-ui-light cursor-pointer"
@@ -286,6 +320,7 @@ function OutletFlow() {
  */
 function TreatedTank() {
   const tank = LAYOUT.tank
+  const panel = useSimulationStore((s) => s.panel)
   const water = useRef<Mesh>(null)
   const mat = useRef<MeshStandardMaterial>(null)
   const fill = useRef(0)
@@ -352,7 +387,13 @@ function TreatedTank() {
         <cylinderGeometry args={[1.8, 1.8, 0.15, 16]} />
         <meshStandardMaterial color="#5f6d68" roughness={0.7} />
       </mesh>
-      <Html position={[tank.x, 3.4, tank.z]} center distanceFactor={26} zIndexRange={[10, 0]}>
+      <Html
+        position={[tank.x, 3.4, tank.z]}
+        center
+        distanceFactor={26}
+        zIndexRange={[10, 0]}
+        style={labelStyle(panel != null)}
+      >
         <div className="whitespace-nowrap rounded-full border border-ag-ui-border bg-ag-ui/85 px-3 py-1 text-[11px] font-semibold text-ag-good shadow-panel">
           Treated Water
         </div>
