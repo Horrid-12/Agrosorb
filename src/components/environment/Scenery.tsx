@@ -3,32 +3,106 @@ import { Instance, Instances } from '@react-three/drei'
 import { LAYOUT, mulberry32 } from './layout'
 
 /**
- * Environmental dressing: instanced low-poly trees, scattered rocks and
- * a small barn. Everything is procedural — no external model files.
+ * Environmental dressing: a dense jungle of instanced low-poly trees
+ * spreading across the entire horizon, scattered rocks and a small barn.
+ * Trees avoid the core field / channel / station area but fill every
+ * other direction so the farm feels carved out of tropical woodland.
  */
 export function Scenery() {
   const trees = useMemo(() => {
     const rng = mulberry32(42)
     const spots: Array<{ x: number; z: number; s: number }> = []
-    // Back edge (north) and right edge (east), avoiding fields/channels.
-    for (let i = 0; i < 14; i++) {
-      spots.push({ x: -30 + rng() * 64, z: -36 + rng() * 4, s: 0.8 + rng() * 0.7 })
+
+    // ── Core exclusion zone (fields + channels + station area) ──
+    const coreXMin = -8
+    const coreXMax = 28
+    const coreZMin = -28
+    const coreZMax = 24
+
+    const isInCore = (x: number, z: number) =>
+      x > coreXMin && x < coreXMax && z > coreZMin && z < coreZMax
+
+    // Also keep trees out of the river corridor
+    const isInRiver = (x: number) => x > LAYOUT.river.xMin - 2 && x < LAYOUT.river.xMax + 2
+
+    // ── Dense ring of trees around the core area (nearby jungle) ──
+    for (let i = 0; i < 60; i++) {
+      const angle = rng() * Math.PI * 2
+      const dist = 28 + rng() * 22
+      const x = 5 + Math.cos(angle) * dist
+      const z = -2 + Math.sin(angle) * dist
+      if (!isInCore(x, z) && !isInRiver(x)) {
+        spots.push({ x, z, s: 0.8 + rng() * 0.9 })
+      }
     }
-    for (let i = 0; i < 8; i++) {
-      spots.push({ x: 30 + rng() * 6, z: -30 + rng() * 58, s: 0.8 + rng() * 0.7 })
+
+    // ── Mid-distance tree belt (fills the middle ground) ──
+    for (let i = 0; i < 80; i++) {
+      const angle = rng() * Math.PI * 2
+      const dist = 45 + rng() * 35
+      const x = 2 + Math.cos(angle) * dist
+      const z = Math.sin(angle) * dist
+      if (!isInRiver(x)) {
+        spots.push({ x, z, s: 0.7 + rng() * 1.0 })
+      }
     }
-    // A cluster near the river bank.
-    for (let i = 0; i < 5; i++) {
-      spots.push({ x: -29 - rng() * 2, z: -20 + i * 8 + rng() * 3, s: 0.9 + rng() * 0.6 })
+
+    // ── Far horizon trees (all directions, dense enough to read as forest) ──
+    for (let i = 0; i < 120; i++) {
+      const angle = rng() * Math.PI * 2
+      const dist = 70 + rng() * 60
+      const x = Math.cos(angle) * dist
+      const z = Math.sin(angle) * dist
+      if (!isInRiver(x)) {
+        spots.push({ x, z, s: 0.6 + rng() * 1.1 })
+      }
     }
+
+    // ── River-bank trees running alongside the river ──
+    for (let i = 0; i < 20; i++) {
+      const z = -90 + rng() * 180
+      const side = rng() > 0.5 ? LAYOUT.river.xMin - 3 - rng() * 4 : LAYOUT.river.xMax + 2 + rng() * 4
+      spots.push({ x: side, z, s: 0.85 + rng() * 0.65 })
+    }
+
+    // ── Fill gaps: cardinal direction clusters ──
+    // South
+    for (let i = 0; i < 25; i++) {
+      const x = -50 + rng() * 100
+      const z = 35 + rng() * 60
+      if (!isInCore(x, z) && !isInRiver(x)) {
+        spots.push({ x, z, s: 0.7 + rng() * 0.8 })
+      }
+    }
+    // North
+    for (let i = 0; i < 25; i++) {
+      const x = -50 + rng() * 100
+      const z = -35 - rng() * 60
+      if (!isInRiver(x)) {
+        spots.push({ x, z, s: 0.7 + rng() * 0.8 })
+      }
+    }
+    // East
+    for (let i = 0; i < 20; i++) {
+      const x = 35 + rng() * 60
+      const z = -60 + rng() * 120
+      spots.push({ x, z, s: 0.7 + rng() * 0.8 })
+    }
+    // West (beyond river)
+    for (let i = 0; i < 20; i++) {
+      const x = LAYOUT.river.xMin - 6 - rng() * 50
+      const z = -60 + rng() * 120
+      spots.push({ x, z, s: 0.7 + rng() * 0.8 })
+    }
+
     return spots
   }, [])
 
   const rocks = useMemo(() => {
     const rng = mulberry32(99)
-    return Array.from({ length: 12 }, () => ({
-      x: -34 + rng() * 66,
-      z: -34 + rng() * 66,
+    return Array.from({ length: 18 }, () => ({
+      x: -50 + rng() * 100,
+      z: -50 + rng() * 100,
       s: 0.25 + rng() * 0.45,
       rot: rng() * Math.PI,
     })).filter((r) => {
@@ -49,7 +123,7 @@ export function Scenery() {
         ))}
       </Instances>
 
-      {/* Foliage — two stacked cones per tree */}
+      {/* Foliage — two stacked cones per tree (tropical green) */}
       <Instances limit={trees.length * 2} castShadow>
         <coneGeometry args={[0.85, 1.5, 6]} />
         <meshStandardMaterial color="#244d35" roughness={0.9} flatShading />
@@ -59,6 +133,17 @@ export function Scenery() {
         {trees.map((t, i) => (
           <Instance key={`b${i}`} position={[t.x, (1.3 + 1.65) * t.s, t.z]} scale={[t.s * 0.66, t.s * 0.8, t.s * 0.66]} rotation={[0, i * 1.3, 0]} />
         ))}
+      </Instances>
+
+      {/* Accent foliage — slightly lighter green canopy tops for variety */}
+      <Instances limit={trees.length}>
+        <coneGeometry args={[0.6, 1.0, 5]} />
+        <meshStandardMaterial color="#3a6b4a" roughness={0.85} flatShading />
+        {trees
+          .filter((_, i) => i % 3 === 0)
+          .map((t, i) => (
+            <Instance key={`c${i}`} position={[t.x, (1.3 + 2.2) * t.s, t.z]} scale={[t.s * 0.5, t.s * 0.65, t.s * 0.5]} rotation={[0, i * 2.1, 0]} />
+          ))}
       </Instances>
 
       {/* Rocks */}

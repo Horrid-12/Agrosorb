@@ -69,7 +69,7 @@ export const RUNOFF_PATHS: Array<Array<[number, number]>> = [
 
 export const LAYOUT = {
   groundSize: 80,
-  river: { xMin: -40, xMax: -32, zMin: -40, zMax: 40, y: 0.25 },
+  river: { xMin: -40, xMax: -32, zMin: -120, zMax: 120, y: 0.25 },
   fields: {
     A: { xMin: -6, xMax: 8, zMin: -24, zMax: -10 },
     B: { xMin: -6, xMax: 8, zMin: -4, zMax: 10 },

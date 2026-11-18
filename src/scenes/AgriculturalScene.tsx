@@ -29,7 +29,7 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
     <Canvas
       shadows
       dpr={[1, 1.5]}
-      camera={{ position: [30, 24, 34], fov: 38, near: 0.5, far: 300 }}
+      camera={{ position: [30, 24, 34], fov: 38, near: 0.5, far: 500 }}
       gl={{ antialias: true }}
       onCreated={({ gl }) => {
         // Allow three.js to restore rendering after a driver-level context
@@ -56,9 +56,9 @@ export default function AgriculturalScene({ mode = 'sim' }: AgriculturalScenePro
         <Lighting />
         <TreatmentDriver />
         <Terrain />
-        <CropField rect={LAYOUT.fields.A} seed={11} />
-        <CropField rect={LAYOUT.fields.B} seed={23} />
-        <CropField rect={LAYOUT.fields.C} seed={37} />
+        <CropField rect={LAYOUT.fields.A} seed={11} cropType="wheat" />
+        <CropField rect={LAYOUT.fields.B} seed={23} cropType="cabbage" />
+        <CropField rect={LAYOUT.fields.C} seed={37} cropType="corn" />
         <Channels />
         <Scenery />
         <FiltrationStation />
