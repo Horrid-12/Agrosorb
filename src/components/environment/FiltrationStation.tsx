@@ -7,10 +7,14 @@ import type { Mesh, MeshStandardMaterial } from 'three'
 import { LAYOUT } from './layout'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { MATERIALS } from '@/data/materials'
+import { POLLUTION_SCENARIOS } from '@/data/pollutionScenarios'
+import { isLayerEnabled } from '@/simulation/engine/filtrationEngine'
 import { TREATMENT } from '@/simulation/models/constants'
 
 const LAYER_CM_TO_WORLD = 0.42 // cm of bed depth → world height units
 const WET_TINT = new THREE.Color('#4299c7')
+const DISABLED_TINT = new THREE.Color('#56605b')
+const LAYER_SCRATCH = new THREE.Color()
 
 const PIPE_MATERIAL = (
   <meshStandardMaterial color="#8b9aa3" roughness={0.5} metalness={0.3} />
@@ -137,29 +141,44 @@ function PipeFlow({
 export function FiltrationStation() {
   const layers = useSimulationStore((s) => s.layers)
   const setPanel = useSimulationStore((s) => s.setPanel)
+  const setStationInspecting = useSimulationStore((s) => s.setStationInspecting)
   const panel = useSimulationStore((s) => s.panel)
   const station = LAYOUT.station
 
   const waterHead = useRef<Mesh>(null)
   const waterHeadMat = useRef<MeshStandardMaterial>(null)
+  const sedimentCake = useRef<Mesh>(null)
+  const sedimentMat = useRef<MeshStandardMaterial>(null)
   /** Wetness 0..1 per layer (keyed by layer id, in stack order bottom→top). */
   const layerWet = useRef<Map<string, number>>(new Map())
   const layerMats = useRef<Map<string, MeshStandardMaterial>>(new Map())
 
   // Stack layers bottom-up (gravel sits at the bottom of the glass tube).
+  // The cm→world scale shrinks for very deep columns so the bed always
+  // fits inside the glass instead of overflowing the cap.
   const stack = [...layers].reverse()
+  const totalThickness = layers.reduce((sum, l) => sum + l.thickness, 0)
+  const layerScale = Math.min(LAYER_CM_TO_WORLD, 5.2 / Math.max(totalThickness, 1))
   let cursorY = 0.4
   const layerMeshes = stack.map((layer) => {
-    const h = Math.max(0.25, layer.thickness * LAYER_CM_TO_WORLD)
+    const h = Math.max(0.25, layer.thickness * layerScale)
     const y = cursorY + h / 2
     cursorY += h
-    return { key: layer.id, material: layer.material, h, y }
+    return { key: layer.id, material: layer.material, h, y, enabled: isLayerEnabled(layer) }
   })
   const stackTop = cursorY
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.1)
-    const { treatmentStage: stage, stageElapsed, layers: liveLayers } = useSimulationStore.getState()
+    const {
+      treatmentStage: stage,
+      stageElapsed,
+      layers: liveLayers,
+      influent,
+      pollutionScenario,
+      pendingResult,
+      result,
+    } = useSimulationStore.getState()
     const duration = TREATMENT.stageDurations[stage as keyof typeof TREATMENT.stageDurations] ?? 0
     const sp = duration > 0 ? Math.min(1, stageElapsed / duration) : 0
 
@@ -175,7 +194,28 @@ export function FiltrationStation() {
       waterHead.current.visible = s.y > 0.02
     }
     if (waterHeadMat.current) {
+      // Water appearance follows simulated turbidity, not a decorative tint.
+      const visuals = POLLUTION_SCENARIOS[pollutionScenario].visuals
+      const muddy = Math.min(1, influent.turbidity / 150)
+      const clean = new THREE.Color('#4299c7')
+      const dirty = new THREE.Color(visuals.sedimentColor)
+      waterHeadMat.current.color.copy(clean).lerp(dirty, muddy * 0.85)
       waterHeadMat.current.emissiveIntensity = 0.25 + Math.sin(performance.now() * 0.0022) * 0.15
+    }
+
+    // Sediment cake building on top of the media during/after a run.
+    if (sedimentCake.current && sedimentMat.current) {
+      const output = pendingResult ?? result
+      const loading = output?.filterLoading ?? 0
+      const activeCake = loading > 0.02 && (stage === 'filtering' || stage === 'draining' || stage === 'done')
+      sedimentCake.current.visible = activeCake
+      if (activeCake) {
+        const visuals = POLLUTION_SCENARIOS[pollutionScenario].visuals
+        sedimentMat.current.color.set(visuals.sedimentColor)
+        sedimentMat.current.opacity = 0.55 + loading * 0.4
+        const target = 0.06 + loading * 0.35
+        sedimentCake.current.scale.y += (target - sedimentCake.current.scale.y) * Math.min(1, dt * 3)
+      }
     }
 
     /* Media beds wet up from the top layer downward during filtering */
@@ -190,15 +230,18 @@ export function FiltrationStation() {
       layerWet.current.set(l.key, next)
       const mat = layerMats.current.get(l.key)
       if (mat) {
-        const base = new THREE.Color(MATERIALS[l.material].color)
-        mat.color.copy(base).lerp(WET_TINT, next * 0.4)
+        LAYER_SCRATCH.set(MATERIALS[l.material].color)
+        if (!l.enabled) LAYER_SCRATCH.lerp(DISABLED_TINT, 0.65)
+        mat.color.copy(LAYER_SCRATCH).lerp(WET_TINT, next * 0.4)
       }
     })
   })
 
-  const openConfig = (e: { stopPropagation: () => void }) => {
+  const openInspection = (e: { stopPropagation: () => void }) => {
     e.stopPropagation()
-    setPanel(panel === 'config' ? null : 'config')
+    const next = panel === 'inspection' ? null : 'inspection'
+    setPanel(next)
+    setStationInspecting(next === 'inspection')
   }
 
   return (
@@ -231,7 +274,7 @@ export function FiltrationStation() {
       </mesh>
 
       {/* Water head above the media bed (animates during treatment) */}
-      <mesh position={[station.x, stackTop + 0.35, station.z]} ref={waterHead} visible={false} scale={[1, 0.001, 1]}>
+      <mesh position={[station.x, 0.6 + stackTop + 0.35, station.z]} ref={waterHead} visible={false} scale={[1, 0.001, 1]}>
         <cylinderGeometry args={[1.85, 1.85, 0.7, 20]} />
         <meshStandardMaterial ref={waterHeadMat} color="#4299c7" transparent opacity={0.5} emissive="#4299c7" emissiveIntensity={0.3} roughness={0.2} />
       </mesh>
@@ -252,6 +295,19 @@ export function FiltrationStation() {
         </mesh>
       ))}
 
+      <ColumnTracers baseY={0.7} topY={0.6 + stackTop} />
+
+      {/* Sediment cake on top of the active media (loading visual) */}
+      <mesh
+        ref={sedimentCake}
+        visible={false}
+        position={[station.x, 0.6 + stackTop + 0.08, station.z]}
+        scale={[1, 0.06, 1]}
+      >
+        <cylinderGeometry args={[1.86, 1.86, 1, 20]} />
+        <meshStandardMaterial ref={sedimentMat} color="#8a6138" transparent opacity={0.7} roughness={1} />
+      </mesh>
+
       {/* Column cap + outlet plumbing to the treated tank */}
       <mesh castShadow position={[station.x, 6.7, station.z]}>
         <cylinderGeometry args={[2.3, 2.3, 0.35, 20]} />
@@ -266,7 +322,7 @@ export function FiltrationStation() {
       {/* Click target (invisible cylinder around the column) */}
       <mesh
         position={[station.x, 3.6, station.z]}
-        onClick={openConfig}
+        onClick={openInspection}
         onPointerOver={() => (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
@@ -282,15 +338,125 @@ export function FiltrationStation() {
         style={labelStyle(panel != null)}
       >
         <button
-          onClick={openConfig}
+          onClick={openInspection}
           className="whitespace-nowrap rounded-full border border-ag-ui-border bg-ag-ui/85 px-3 py-1 text-[11px] font-semibold text-ag-sand shadow-panel transition hover:bg-ag-ui-light cursor-pointer"
         >
-          Filtration Station
+          Filtration Station · click to inspect
         </button>
       </Html>
 
       <TreatedTank />
     </group>
+  )
+}
+
+/**
+ * Dissolved/suspended tracers moving down through the configured media.
+ * Colours and counts are driven by the active scenario and influent
+ * chemistry, so the column visibly changes when the pollution scenario or
+ * concentration controls change. These are visual tracers, not molecules.
+ */
+function ColumnTracers({ baseY, topY }: { baseY: number; topY: number }) {
+  const points = useRef<THREE.Points>(null)
+  const material = useRef<THREE.PointsMaterial>(null)
+  const SEDIMENT = 20
+  const CONTAMINANT = 18
+  const NUTRIENT = 14
+  const MAX = SEDIMENT + CONTAMINANT + NUTRIENT
+
+  const { positions, speeds } = useMemo(() => {
+    const positions = new Float32Array(MAX * 3)
+    const speeds = new Float32Array(MAX)
+    for (let i = 0; i < MAX; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const radius = Math.sqrt(Math.random()) * 1.55
+      positions[i * 3] = Math.cos(angle) * radius
+      positions[i * 3 + 1] = baseY + Math.random() * Math.max(0.1, topY - baseY)
+      positions[i * 3 + 2] = Math.sin(angle) * radius
+      speeds[i] = 0.8 + Math.random() * 1.4
+    }
+    return { positions, speeds }
+  }, [baseY, topY, MAX])
+
+  const colors = useMemo(() => {
+    const colors = new Float32Array(MAX * 3)
+    const sediment = new THREE.Color('#8a6138')
+    const contaminant = new THREE.Color('#b05f8f')
+    const nutrient = new THREE.Color('#b7d44e')
+    for (let i = 0; i < MAX; i++) {
+      const c = i < SEDIMENT ? sediment : i < SEDIMENT + CONTAMINANT ? contaminant : nutrient
+      colors[i * 3] = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+    return colors
+  }, [MAX])
+
+  useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 0.05)
+    const s = useSimulationStore.getState()
+    const stage = s.treatmentStage
+    const flowing = stage === 'filtering' || stage === 'draining'
+    if (!points.current || !material.current) return
+
+    const visuals = POLLUTION_SCENARIOS[s.pollutionScenario].visuals
+    const sedimentCount = visuals.sediment
+      ? Math.round(SEDIMENT * Math.min(1, s.influent.turbidity / 150))
+      : 0
+    const contaminantCount = Math.round(
+      CONTAMINANT * Math.min(1, s.influent.contaminant / 18),
+    )
+    const nutrientCount = visuals.nutrients
+      ? Math.round(NUTRIENT * Math.min(1, (s.influent.nitrate + s.influent.phosphate) / 22))
+      : 0
+    const active = sedimentCount + contaminantCount + nutrientCount
+
+    points.current.visible = flowing && active > 0
+    // Preserve species ordering: inactive tracers are parked far below the
+    // scene rather than truncating the draw range (which would show the
+    // wrong species first when a category is absent).
+    points.current.geometry.setDrawRange(0, MAX)
+    material.current.opacity = flowing ? 0.85 : 0
+    if (!flowing) return
+
+    const attr = points.current.geometry.attributes.position as THREE.BufferAttribute
+    const arr = attr.array as Float32Array
+    const speedFactor = 0.35 + s.flowRate * 0.12
+    for (let i = 0; i < MAX; i++) {
+      const visible =
+        i < SEDIMENT
+          ? i < sedimentCount
+          : i < SEDIMENT + CONTAMINANT
+            ? i - SEDIMENT < contaminantCount
+            : i - SEDIMENT - CONTAMINANT < nutrientCount
+      if (!visible) {
+        arr[i * 3 + 1] = -1000
+        continue
+      }
+      arr[i * 3 + 1] -= speeds[i] * speedFactor * dt
+      if (arr[i * 3 + 1] < baseY) {
+        arr[i * 3 + 1] = topY
+      }
+    }
+    attr.needsUpdate = true
+  })
+
+  return (
+    <points ref={points} position={[LAYOUT.station.x, 0, LAYOUT.station.z]} frustumCulled={false}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-color" args={[colors, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        ref={material}
+        vertexColors
+        size={0.22}
+        sizeAttenuation
+        transparent
+        opacity={0.85}
+        depthWrite={false}
+      />
+    </points>
   )
 }
 
@@ -328,7 +494,13 @@ function TreatedTank() {
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.1)
-    const { treatmentStage: stage, stageElapsed, pendingResult, result } = useSimulationStore.getState()
+    const {
+      treatmentStage: stage,
+      stageElapsed,
+      pendingResult,
+      result,
+      pollutionScenario,
+    } = useSimulationStore.getState()
     const duration = TREATMENT.stageDurations.draining
     const sp = stage === 'draining' ? Math.min(1, stageElapsed / duration) : 0
     const eff = ((pendingResult ?? result)?.overallEfficiency ?? 0) / 100
@@ -362,9 +534,16 @@ function TreatedTank() {
       water.current.position.y = 0.15 + (1.9 * f) / 2
     }
     if (mat.current) {
-      // Clean, efficient runs tint the tank water blue; weak ones stay murky.
-      const efficiency = fillTargetEff(pendingResult, result)
-      const targetColor = new THREE.Color(efficiency >= 55 ? '#4299c7' : '#8a744f')
+      // Treated-water colour follows simulated final turbidity, not an
+      // arbitrary efficiency threshold.
+      const output = pendingResult ?? result
+      const visuals = POLLUTION_SCENARIOS[pollutionScenario].visuals
+      const finalTurbidity = output?.final.turbidity ?? 0
+      const muddy = Math.min(1, finalTurbidity / 150)
+      const targetColor = new THREE.Color('#4299c7').lerp(
+        new THREE.Color(visuals.sedimentColor),
+        muddy * 0.8,
+      )
       mat.current.color.lerp(targetColor, Math.min(1, dt * 2))
     }
   })
@@ -400,11 +579,4 @@ function TreatedTank() {
       </Html>
     </group>
   )
-}
-
-function fillTargetEff(
-  pending: { overallEfficiency: number } | null,
-  result: { overallEfficiency: number } | null,
-): number {
-  return (pending ?? result)?.overallEfficiency ?? 0
 }

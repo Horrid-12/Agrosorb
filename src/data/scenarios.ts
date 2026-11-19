@@ -16,8 +16,9 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     tagline: 'Heavy storm over bare soil',
     brief:
       'A violent storm has stripped topsoil from the fields. The river runs thick with suspended sediment. Physical filtration is your weapon — stack deep fine media to settle the water down.',
-    start: { rainIntensity: 0.9, flowRate: 2 },
-    water: { turbidity: 95, contaminant: 4, pH: 6.2 },
+    start: { rainIntensity: 0.9, flowRate: 2, erosionIntensity: 0.85 },
+    water: { turbidity: 95, contaminant: 4, nitrate: 2, phosphate: 2.5, pH: 6.2 },
+    pollutionScenario: 'soil-erosion',
     objectives: [
       { id: 't1', text: 'Reduce turbidity by at least 65%', metric: 'turbidityRemoval', op: '>=', target: 65, unit: '%' },
       { id: 't2', text: 'Final turbidity below 25 NTU', metric: 'finalTurbidity', op: '<', target: 25, unit: 'NTU' },
@@ -29,8 +30,9 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     tagline: 'Dissolved threat at high flow',
     brief:
       'Fields were recently treated and the wash-off carries an elevated load of the dissolved model contaminant. The pump runs fast (4 L/min), cutting contact time — you will need serious activated carbon.',
-    start: { rainIntensity: 0.7, flowRate: 4 },
-    water: { turbidity: 45, contaminant: 14, pH: 6.4 },
+    start: { rainIntensity: 0.7, flowRate: 4, erosionIntensity: 0.35 },
+    water: { turbidity: 45, contaminant: 14, nitrate: 3, phosphate: 1.5, pH: 6.4 },
+    pollutionScenario: 'pesticide-runoff',
     objectives: [
       { id: 'c1', text: 'Remove at least 65% of the model contaminant', metric: 'contaminantRemoval', op: '>=', target: 65, unit: '%' },
       { id: 'c2', text: 'Final concentration below 5 mg/L', metric: 'finalContaminant', op: '<', target: 5, unit: 'mg/L' },
@@ -42,8 +44,9 @@ export const SCENARIOS: Record<ScenarioId, Scenario> = {
     tagline: 'Limited material budget',
     brief:
       'Media is scarce this season. Build the best treatment train you can with at most 14 cm of bed depth and 70 credits of material. Every centimetre counts.',
-    start: { rainIntensity: 0.6, flowRate: 2 },
-    water: { turbidity: 70, contaminant: 10, pH: 6.4 },
+    start: { rainIntensity: 0.6, flowRate: 2, erosionIntensity: 0.55 },
+    water: { turbidity: 70, contaminant: 10, nitrate: 6, phosphate: 3, pH: 6.4 },
+    pollutionScenario: 'mixed-contamination',
     budget: 14,
     objectives: [
       { id: 'o1', text: 'Reach at least 55% overall efficiency', metric: 'overallEfficiency', op: '>=', target: 55, unit: '%' },

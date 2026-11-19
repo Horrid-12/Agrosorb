@@ -1,12 +1,23 @@
-import { CloudRain, CloudOff, Droplets, Play, RotateCcw, TriangleAlert, Waves } from 'lucide-react'
+import {
+  CloudRain,
+  CloudOff,
+  Droplets,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  TriangleAlert,
+  Waves,
+} from 'lucide-react'
 import { GameButton, HudPanel } from '@/components/ui/GameButton'
 import {
   useSimulationStore,
   selectCanRun,
+  selectHydraulicLoad,
   selectTreatmentProgress,
   STAGE_LABEL,
 } from '@/stores/simulationStore'
-import { FLOW_RATES, RAIN } from '@/simulation/models/constants'
+import { DESIGN_FLOW_RATE, FLOW_RATES, RAIN } from '@/simulation/models/constants'
+import { POLLUTION_SCENARIOS } from '@/data/pollutionScenarios'
 
 const PHASE_LABEL: Record<string, { text: string; tone: string }> = {
   idle: { text: 'Standby', tone: 'text-ag-text-dim' },
@@ -36,16 +47,31 @@ export function SimulationControls() {
   const simError = useSimulationStore((s) => s.simError)
   const treatmentStage = useSimulationStore((s) => s.treatmentStage)
   const progress = useSimulationStore(selectTreatmentProgress)
+  const erosionIntensity = useSimulationStore((s) => s.erosionIntensity)
+  const pollutionScenario = useSimulationStore((s) => s.pollutionScenario)
+  const setPanel = useSimulationStore((s) => s.setPanel)
+  const hydraulicLoad = useSimulationStore(selectHydraulicLoad)
 
   const phaseInfo = PHASE_LABEL[phase]
+  const scenarioName = POLLUTION_SCENARIOS[pollutionScenario].name
+  // Scenario presets can start between the fixed buttons (e.g. 3 L/min),
+  // so include the current value to keep the radiogroup truthful.
+  const flowRates = Array.from(new Set<number>([...FLOW_RATES, flowRate])).sort(
+    (a, b) => a - b,
+  )
 
   return (
     <HudPanel className="pointer-events-auto w-[300px] max-w-[calc(100vw-2rem)] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-ag-text-dim">
-          Weather Control
-        </span>
-        <span className={`font-mono text-[11px] font-semibold ${phaseInfo.tone}`}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button
+          onClick={() => setPanel('scenario')}
+          className="flex min-w-0 items-center gap-1.5 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-ag-text-dim transition hover:text-ag-text"
+          title="Open the scenario and chemistry controls"
+        >
+          <SlidersHorizontal size={13} className="shrink-0" />
+          <span className="truncate">{scenarioName}</span>
+        </button>
+        <span className={`shrink-0 font-mono text-[11px] font-semibold ${phaseInfo.tone}`}>
           ● {phaseInfo.text}
         </span>
       </div>
@@ -93,8 +119,12 @@ export function SimulationControls() {
       <label className="mb-1.5 flex items-center gap-1.5 text-xs text-ag-text-dim">
         <Waves size={14} /> Influent flow rate
       </label>
-      <div className="mb-3 grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Flow rate">
-        {FLOW_RATES.map((rate) => (
+      <div
+        className={`mb-3 grid gap-1.5 ${flowRates.length > 4 ? 'grid-cols-5' : 'grid-cols-4'}`}
+        role="radiogroup"
+        aria-label="Flow rate"
+      >
+        {flowRates.map((rate) => (
           <button
             key={rate}
             role="radio"
@@ -111,6 +141,20 @@ export function SimulationControls() {
           </button>
         ))}
       </div>
+
+      <div className="mb-2 flex items-center justify-between text-[10px] text-ag-text-dim">
+        <span>Soil erosion</span>
+        <span className="font-mono text-ag-text">{Math.round(erosionIntensity * 100)}%</span>
+      </div>
+      {hydraulicLoad > 1 && (
+        <div className="mb-3 flex items-start gap-1.5 rounded-lg border border-ag-danger/40 bg-ag-danger/10 px-2.5 py-2 text-[10px] leading-snug text-ag-danger">
+          <TriangleAlert size={13} className="mt-0.5 shrink-0" />
+          <span>
+            Hydraulic overload — {flowRate} L/min exceeds the {DESIGN_FLOW_RATE} L/min design
+            flow. Contact time drops and part of the flow bypasses the media.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <GameButton onClick={runSimulation} disabled={!canRun}>

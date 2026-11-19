@@ -83,6 +83,42 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
   },
   {
+    id: 'nutrients',
+    title: 'Nutrient Pollution',
+    icon: 'sprout',
+    summary: 'Nitrate and phosphate feed algal blooms downstream.',
+    body: [
+      'Fertilizer and manure leave farmland as dissolved nitrate and phosphate. Unlike soil particles, they travel with the water and cannot simply be sieved out.',
+      'In this simulator the column retains some phosphate through media contact, but only weakly attenuates nitrate. Real nitrate control usually needs biological denitrification or ion exchange.',
+      'When nutrient-rich water reaches a river or pond it can feed an algal bloom — shown in the scene as a visual consequence of the simulated nutrient load, not an ecological prediction.',
+    ],
+    fact: 'A filter that looks clear can still be nutrient-rich: turbidity and dissolved nutrients are different problems.',
+  },
+  {
+    id: 'loading',
+    title: 'Loading, Clogging and Media Condition',
+    icon: 'layers',
+    summary: 'Filters have finite capacity — captured material changes performance.',
+    body: [
+      'Every bed accumulates what it captures. Suspended solids build up at the surface and inside the pore spaces; activated carbon gradually loses available adsorption sites.',
+      'The inspection view shows this as a solids-loading meter and an adsorption-saturation meter. These are illustrative capacity indicators from the documented model, not bench measurements.',
+      'Media condition reduces both filtration and adsorption effectiveness. A heavily exhausted bed can be disabled in the model so you can see how the column performs without it.',
+    ],
+    fact: 'Layer order matters: fine sand above carbon shields its pores from sediment, preserving adsorption capacity.',
+  },
+  {
+    id: 'scenarios',
+    title: 'Storm Scenarios and Overflow',
+    icon: 'cloud-lightning',
+    summary: 'Different pollution events stress a treatment train in different ways.',
+    body: [
+      'Soil erosion loads the water with suspended sediment; pesticide runoff carries a dissolved model contaminant; fertilizer pollution adds nitrate and phosphate; extreme rainfall overloads the hydraulics.',
+      'Flow above the column design rate shortens contact time and, in this model, forces part of the flow to bypass the media untreated. The scene responds with rising water, overflow and a hydraulic-overload warning.',
+      'Switching scenarios changes the simulated influent, the water colour, tracer particles, clouds, algae and flood effects together — all from the same parameters.',
+    ],
+    fact: 'The coloured particles are visual tracers, not pesticide molecules or measured concentrations.',
+  },
+  {
     id: 'limits',
     title: 'Limitations of This Simulator',
     icon: 'alert-triangle',
@@ -99,33 +135,34 @@ export const LEARN_TOPICS: LearnTopic[] = [
 export const HOW_IT_WORKS_STEPS = [
   {
     step: 1,
-    title: 'Rain falls on the fields',
-    text: 'Set the rainfall intensity and watch the storm roll over the crop fields.',
+    title: 'Pick a pollution scenario',
+    text: 'Choose soil erosion, pesticide runoff, fertilizer pollution, mixed contamination or extreme rainfall — or tune rainfall, erosion, flow and chemistry yourself.',
   },
   {
     step: 2,
-    title: 'Runoff mobilizes pollutants',
-    text: 'Surface water picks up soil particles and a dissolved model contaminant as it drains toward the collection channel.',
+    title: 'Rain mobilizes pollutants',
+    text: 'Surface water picks up suspended soil, nutrients and a dissolved model contaminant as it drains toward the collection channel.',
   },
   {
     step: 3,
     title: 'Configure the filter column',
-    text: 'Stack gravel, sand and activated carbon layers in any order and depth you like.',
+    text: 'Stack gravel, sand and activated carbon in any order and depth. Enable, reorder or exhaust beds to see how the train responds.',
   },
   {
     step: 4,
     title: 'Water is treated',
-    text: 'The engine computes turbidity removal, adsorption of the model contaminant and contact time for your exact configuration.',
+    text: 'The engine computes turbidity, contaminant, nitrate and phosphate removal, loading, contact time and hydraulic bypass for your exact configuration.',
   },
   {
     step: 5,
-    title: 'Compare and learn',
-    text: 'The dashboard shows before/after water quality, removal efficiency and a full history of your experiments.',
+    title: 'Inspect and compare',
+    text: 'Click the station to inspect each bed, then compare before/after water quality, removal charts and loading in the dashboard.',
   },
 ]
 
 export const ABOUT_TEXT = [
   'AgroSorb is an educational simulator for environmental engineering education. It pairs a small physical demonstration model with this interactive web experience.',
-  'The web simulator models a filtration column treating agricultural runoff: suspended particles are removed by physical filtration, while a dissolved model contaminant is captured by adsorption onto activated carbon.',
-  'All water-quality numbers are generated by a deterministic, documented educational model. They are simulated values, deliberately distinct from laboratory measurements.',
+  'The web simulator models a filtration column treating agricultural runoff: suspended particles are removed by physical filtration, a dissolved model contaminant is captured by adsorption onto activated carbon, and nutrients are attenuated only through the explicit mechanisms described in the model. Nitrate removal is deliberately weak — real nitrate control usually needs biological or ion-exchange processes.',
+  'Five environmental scenarios — soil erosion, pesticide runoff, fertilizer pollution, mixed contamination and extreme rainfall — change the simulated influent, water visuals and environmental effects. Coloured particles are visual tracers, not pesticide molecules or measurements.',
+  'All water-quality numbers are generated by a deterministic, documented educational model. They are simulated values, deliberately distinct from laboratory measurements, and no complete-removal claim is made.',
 ]

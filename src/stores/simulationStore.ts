@@ -5,12 +5,17 @@ import type {
   FilterLayer,
   FilterMaterial,
   HudPanel,
+  PollutionScenarioId,
   SimPhase,
   SimResult,
+  WaterQuality,
 } from '@/types'
 import {
   COLUMN_LIMITS,
+  CONDITION_MIN,
   DEFAULT_FLOW_RATE,
+  DESIGN_FLOW_RATE,
+  INITIAL_WATER,
   RAIN,
   TREATMENT,
 } from '@/simulation/models/constants'
@@ -20,24 +25,46 @@ import {
   initialWaterForScenario,
 } from '@/simulation/calculations/metrics'
 import {
-  initialWaterFromStorm,
+  isLayerEnabled,
   simulateFiltration,
+  totalDepth,
   validateConfig,
   validateConfigCached,
 } from '@/simulation/engine/filtrationEngine'
 import { SCENARIOS } from '@/data/scenarios'
+import {
+  INFLUENT_LIMITS,
+  POLLUTION_SCENARIOS,
+  deriveScenarioInfluent,
+  isPollutionScenarioId,
+} from '@/data/pollutionScenarios'
 import type { GameMode, ObjectiveResult, SavedExperiment } from '@/types'
 
 let nextLayerId = 1
 const makeLayerId = () => `layer-${nextLayerId++}`
 
+/** Environmental scenario shown on first load and after leaving a challenge. */
+const DEFAULT_POLLUTION_SCENARIO: PollutionScenarioId = 'mixed-contamination'
+
 /** Default starter column: a classic sand-over-carbon-over-gravel train. */
 function defaultConfig(): FilterLayer[] {
   return [
-    { id: makeLayerId(), material: 'sand', thickness: 3 },
-    { id: makeLayerId(), material: 'carbon', thickness: 3 },
-    { id: makeLayerId(), material: 'gravel', thickness: 2 },
+    { id: makeLayerId(), material: 'sand', thickness: 3, enabled: true, condition: 1 },
+    { id: makeLayerId(), material: 'carbon', thickness: 3, enabled: true, condition: 1 },
+    { id: makeLayerId(), material: 'gravel', thickness: 2, enabled: true, condition: 1 },
   ]
+}
+
+function initialInfluent(
+  scenarioId: PollutionScenarioId = DEFAULT_POLLUTION_SCENARIO,
+  rain = RAIN.defaultIntensity,
+  erosion = POLLUTION_SCENARIOS[DEFAULT_POLLUTION_SCENARIO].start.erosionIntensity,
+): WaterQuality {
+  return deriveScenarioInfluent(POLLUTION_SCENARIOS[scenarioId], rain, erosion)
+}
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v))
 }
 
 /**
@@ -58,7 +85,15 @@ interface SimulationState {
   /* Environment / game phase */
   phase: SimPhase
   rainIntensity: number
+  erosionIntensity: number
+  timeOfDay: number
   runoffTriggered: boolean
+
+  /* Environmental scenario + controlled influent chemistry */
+  pollutionScenario: PollutionScenarioId
+  influent: WaterQuality
+  /** True while chemistry follows the scenario's rain/erosion response. */
+  autoChemistry: boolean
 
   /* Column configuration */
   layers: FilterLayer[]
@@ -88,15 +123,25 @@ interface SimulationState {
 
   /* Actions — environment */
   setRainIntensity: (v: number) => void
+  setErosionIntensity: (v: number) => void
+  setTimeOfDay: (v: number) => void
   startRain: () => void
   stopRain: () => void
   triggerRunoff: () => void
   resetEnvironment: () => void
 
+  /* Actions — environmental scenario + influent chemistry */
+  setPollutionScenario: (id: PollutionScenarioId) => void
+  setInfluentParam: (key: keyof WaterQuality, value: number) => void
+  resetInfluentToScenario: () => void
+
   /* Actions — column */
   addLayer: (material: FilterMaterial) => void
   removeLayer: (id: string) => void
   setLayerThickness: (id: string, thickness: number) => void
+  setLayerEnabled: (id: string, enabled: boolean) => void
+  setLayerCondition: (id: string, condition: number) => void
+  setAllLayerConditions: (condition: number) => void
   moveLayer: (id: string, direction: -1 | 1) => void
   clearColumn: () => void
   loadDefaultColumn: () => void
@@ -104,6 +149,8 @@ interface SimulationState {
 
   /* Actions — simulation */
   runSimulation: () => void
+  /** Re-run the current configuration and chemistry. */
+  replaySimulation: () => void
   /** Called every frame while the treatment animation plays. */
   advanceTreatment: (dt: number) => void
   /** Full reset: weather, flow, filter config, status and visual water. History is preserved. */
@@ -126,7 +173,13 @@ export const useSimulationStore = create<SimulationState>()(
     (set, get) => ({
       phase: 'idle',
       rainIntensity: RAIN.defaultIntensity,
+      erosionIntensity: POLLUTION_SCENARIOS[DEFAULT_POLLUTION_SCENARIO].start.erosionIntensity,
+      timeOfDay: POLLUTION_SCENARIOS[DEFAULT_POLLUTION_SCENARIO].start.timeOfDay,
       runoffTriggered: false,
+
+      pollutionScenario: DEFAULT_POLLUTION_SCENARIO,
+      influent: initialInfluent(),
+      autoChemistry: true,
 
       layers: defaultConfig(),
       flowRate: DEFAULT_FLOW_RATE,
@@ -148,24 +201,141 @@ export const useSimulationStore = create<SimulationState>()(
       stationInspecting: false,
 
       /* ------------------------------------------------------------ */
-      setRainIntensity: (v) => set({ rainIntensity: v }),
+      setRainIntensity: (v) => {
+        const s = get()
+        const rainIntensity = clamp01(v)
+        // While chemistry is in "auto", rainfall genuinely re-derives the
+        // scenario influent. Manual chemistry edits switch auto off.
+        const influent = s.autoChemistry
+          ? deriveScenarioInfluent(
+              POLLUTION_SCENARIOS[s.pollutionScenario],
+              rainIntensity,
+              s.erosionIntensity,
+            )
+          : s.influent
+        set({ rainIntensity, influent })
+      },
+      setErosionIntensity: (v) => {
+        const s = get()
+        const erosionIntensity = clamp01(v)
+        const influent = s.autoChemistry
+          ? deriveScenarioInfluent(
+              POLLUTION_SCENARIOS[s.pollutionScenario],
+              s.rainIntensity,
+              erosionIntensity,
+            )
+          : s.influent
+        set({ erosionIntensity, influent })
+      },
+      setTimeOfDay: (v) => set({ timeOfDay: Math.max(0, Math.min(24, v)) }),
       startRain: () => set({ phase: 'raining' }),
       stopRain: () =>
         set({ phase: 'idle', runoffTriggered: false }),
-      triggerRunoff: () =>
-        set({ phase: 'runoff', runoffTriggered: true, rainIntensity: Math.max(get().rainIntensity, RAIN.runoffThreshold) }),
-      resetEnvironment: () =>
-        set({ phase: 'idle', runoffTriggered: false, rainIntensity: RAIN.defaultIntensity }),
+      triggerRunoff: () => {
+        const s = get()
+        const rainIntensity = Math.max(s.rainIntensity, RAIN.runoffThreshold)
+        set({
+          phase: 'runoff',
+          runoffTriggered: true,
+          rainIntensity,
+          influent: s.autoChemistry
+            ? deriveScenarioInfluent(
+                POLLUTION_SCENARIOS[s.pollutionScenario],
+                rainIntensity,
+                s.erosionIntensity,
+              )
+            : s.influent,
+        })
+      },
+      resetEnvironment: () => {
+        const s = get()
+        const scenario = POLLUTION_SCENARIOS[s.pollutionScenario]
+        const rainIntensity = scenario.start.rainIntensity
+        const erosionIntensity = scenario.start.erosionIntensity
+        set({
+          phase: 'idle',
+          runoffTriggered: false,
+          rainIntensity,
+          erosionIntensity,
+          autoChemistry: true,
+          influent: deriveScenarioInfluent(scenario, rainIntensity, erosionIntensity),
+        })
+      },
+
+      /* ------------------------------------------------------------ */
+      setPollutionScenario: (id) => {
+        const scenario = POLLUTION_SCENARIOS[id]
+        const { rainIntensity, erosionIntensity } = scenario.start
+        set({
+          // Choosing an environmental scenario leaves any Experiment Lab
+          // challenge, keeping influent chemistry in one source of truth.
+          activeScenario: 'free',
+          pollutionScenario: id,
+          phase: 'idle',
+          runoffTriggered: false,
+          rainIntensity,
+          erosionIntensity,
+          timeOfDay: scenario.start.timeOfDay,
+          flowRate: scenario.start.flowRate,
+          autoChemistry: true,
+          influent: deriveScenarioInfluent(scenario, rainIntensity, erosionIntensity),
+          simStatus: 'idle',
+          treatmentStage: 'idle',
+          stageElapsed: 0,
+          simError: null,
+          pendingResult: null,
+          result: null,
+          lastEvaluation: null,
+        })
+      },
+
+      setInfluentParam: (key, value) => {
+        const s = get()
+        const limit = INFLUENT_LIMITS[key]
+        const next = clamp(value, limit.min, limit.max)
+        set({
+          autoChemistry: false,
+          influent: { ...s.influent, [key]: next },
+        })
+      },
+
+      resetInfluentToScenario: () => {
+        const s = get()
+        // In Experiment Lab challenges the chemistry is part of the
+        // challenge brief, so Baseline restores that composition rather
+        // than the environmental scenario's rain/erosion curve.
+        if (s.activeScenario !== 'free') {
+          set({
+            autoChemistry: false,
+            influent: initialWaterForScenario(SCENARIOS[s.activeScenario], s.rainIntensity),
+          })
+          return
+        }
+        set({
+          autoChemistry: true,
+          influent: deriveScenarioInfluent(
+            POLLUTION_SCENARIOS[s.pollutionScenario],
+            s.rainIntensity,
+            s.erosionIntensity,
+          ),
+        })
+      },
 
       /* ------------------------------------------------------------ */
       addLayer: (material) => {
         const { layers } = get()
         if (layers.length >= COLUMN_LIMITS.maxLayers) return
-        if (totalDepthOf(layers) + COLUMN_LIMITS.defaultThickness > COLUMN_LIMITS.maxTotalThickness) return
+        if (totalDepth(layers) + COLUMN_LIMITS.defaultThickness > COLUMN_LIMITS.maxTotalThickness) return
         set({
           layers: [
             ...layers,
-            { id: makeLayerId(), material, thickness: COLUMN_LIMITS.defaultThickness },
+            {
+              id: makeLayerId(),
+              material,
+              thickness: COLUMN_LIMITS.defaultThickness,
+              enabled: true,
+              condition: 1,
+            },
           ],
         })
       },
@@ -182,6 +352,22 @@ export const useSimulationStore = create<SimulationState>()(
               : l,
           ),
         }),
+      setLayerEnabled: (id, enabled) =>
+        set({
+          layers: get().layers.map((l) => (l.id === id ? { ...l, enabled } : l)),
+        }),
+      setLayerCondition: (id, condition) =>
+        set({
+          layers: get().layers.map((l) =>
+            l.id === id
+              ? { ...l, condition: clamp(condition, CONDITION_MIN, 1) }
+              : l,
+          ),
+        }),
+      setAllLayerConditions: (condition) => {
+        const c = clamp(condition, CONDITION_MIN, 1)
+        set({ layers: get().layers.map((l) => ({ ...l, condition: c })) })
+      },
       moveLayer: (id, direction) => {
         const layers = [...get().layers]
         const i = layers.findIndex((l) => l.id === id)
@@ -201,7 +387,7 @@ export const useSimulationStore = create<SimulationState>()(
        * is only committed to `result`/`history` when the animation ends.
        */
       runSimulation: () => {
-        const { layers, flowRate, rainIntensity, simStatus, activeScenario } = get()
+        const { layers, flowRate, influent, simStatus, pollutionScenario } = get()
         if (simStatus === 'running') return
 
         const validation = validateConfig(layers)
@@ -210,19 +396,13 @@ export const useSimulationStore = create<SimulationState>()(
           return
         }
 
-        // Scenario mode uses the scenario's illustrative influent
-        // composition; free mode scales with the current storm.
-        const initial =
-          activeScenario !== 'free'
-            ? initialWaterForScenario(SCENARIOS[activeScenario], rainIntensity)
-            : initialWaterFromStorm(rainIntensity)
-
         const pendingResult = simulateFiltration(
           layers,
           flowRate,
-          initial,
+          influent,
           { id: `sim-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, timestamp: Date.now() },
         )
+        pendingResult.pollutionScenario = pollutionScenario
         set({
           pendingResult,
           simStatus: 'running',
@@ -230,6 +410,13 @@ export const useSimulationStore = create<SimulationState>()(
           treatmentStage: 'filling',
           stageElapsed: 0,
         })
+      },
+
+      replaySimulation: () => {
+        const s = get()
+        if (s.simStatus === 'running') return
+        // Re-use the current configuration and chemistry unchanged.
+        s.runSimulation()
       },
 
       /** Frame driver: advances the visual treatment sequence. */
@@ -278,13 +465,52 @@ export const useSimulationStore = create<SimulationState>()(
        */
       resetSimulation: () => {
         const s = get()
-        const scenario = s.activeScenario !== 'free' ? SCENARIOS[s.activeScenario] : null
+        if (s.activeScenario !== 'free') {
+          const scenario = SCENARIOS[s.activeScenario]
+          const pollutionScenario = scenario.pollutionScenario
+          const environmental = POLLUTION_SCENARIOS[pollutionScenario]
+          const rainIntensity = scenario.start.rainIntensity
+          const erosionIntensity =
+            scenario.start.erosionIntensity ?? environmental.start.erosionIntensity
+          set({
+            phase: 'idle',
+            rainIntensity,
+            erosionIntensity,
+            timeOfDay: environmental.start.timeOfDay,
+            runoffTriggered: false,
+            layers: defaultConfig(),
+            flowRate: scenario.start.flowRate,
+            pollutionScenario,
+            autoChemistry: false,
+            influent: initialWaterForScenario(scenario, rainIntensity),
+            simStatus: 'idle',
+            treatmentStage: 'idle',
+            stageElapsed: 0,
+            simError: null,
+            pendingResult: null,
+            result: null,
+            lastEvaluation: null,
+          })
+          return
+        }
+
+        const environmental = POLLUTION_SCENARIOS[s.pollutionScenario]
+        const rainIntensity = environmental.start.rainIntensity
+        const erosionIntensity = environmental.start.erosionIntensity
         set({
           phase: 'idle',
-          rainIntensity: scenario?.start.rainIntensity ?? RAIN.defaultIntensity,
+          rainIntensity,
+          erosionIntensity,
+          timeOfDay: environmental.start.timeOfDay,
           runoffTriggered: false,
           layers: defaultConfig(),
-          flowRate: scenario?.start.flowRate ?? DEFAULT_FLOW_RATE,
+          flowRate: environmental.start.flowRate,
+          autoChemistry: true,
+          influent: deriveScenarioInfluent(
+            environmental,
+            rainIntensity,
+            erosionIntensity,
+          ),
           simStatus: 'idle',
           treatmentStage: 'idle',
           stageElapsed: 0,
@@ -300,13 +526,52 @@ export const useSimulationStore = create<SimulationState>()(
       /* ------------------------------------------------------------ */
       /** Enter a scenario (or 'free' mode) and apply its start conditions. */
       startScenario: (id) => {
-        const scenario = id !== 'free' ? SCENARIOS[id] : null
+        if (id === 'free') {
+          const s = get()
+          const environmental = POLLUTION_SCENARIOS[s.pollutionScenario]
+          const rainIntensity = environmental.start.rainIntensity
+          const erosionIntensity = environmental.start.erosionIntensity
+          set({
+            activeScenario: 'free',
+            phase: 'idle',
+            runoffTriggered: false,
+            rainIntensity,
+            erosionIntensity,
+            timeOfDay: environmental.start.timeOfDay,
+            flowRate: environmental.start.flowRate,
+            autoChemistry: true,
+            influent: deriveScenarioInfluent(
+              environmental,
+              rainIntensity,
+              erosionIntensity,
+            ),
+            simStatus: 'idle',
+            treatmentStage: 'idle',
+            stageElapsed: 0,
+            simError: null,
+            pendingResult: null,
+            result: null,
+            lastEvaluation: null,
+          })
+          return
+        }
+
+        const scenario = SCENARIOS[id]
+        const environmental = POLLUTION_SCENARIOS[scenario.pollutionScenario]
+        const rainIntensity = scenario.start.rainIntensity
+        const erosionIntensity =
+          scenario.start.erosionIntensity ?? environmental.start.erosionIntensity
         set({
           activeScenario: id,
+          pollutionScenario: scenario.pollutionScenario,
           phase: 'idle',
           runoffTriggered: false,
-          rainIntensity: scenario?.start.rainIntensity ?? RAIN.defaultIntensity,
-          flowRate: scenario?.start.flowRate ?? DEFAULT_FLOW_RATE,
+          rainIntensity,
+          erosionIntensity,
+          timeOfDay: environmental.start.timeOfDay,
+          flowRate: scenario.start.flowRate,
+          autoChemistry: false,
+          influent: initialWaterForScenario(scenario, rainIntensity),
           simStatus: 'idle',
           treatmentStage: 'idle',
           stageElapsed: 0,
@@ -345,15 +610,24 @@ export const useSimulationStore = create<SimulationState>()(
     }),
     {
       name: 'agrosorb-simulation',
+      version: 2,
       // Only persist user-authored state; transient treatment state stays in memory.
       partialize: (s) => ({
         layers: s.layers,
         flowRate: s.flowRate,
         history: s.history,
         rainIntensity: s.rainIntensity,
+        erosionIntensity: s.erosionIntensity,
+        timeOfDay: s.timeOfDay,
+        pollutionScenario: s.pollutionScenario,
+        influent: s.influent,
+        autoChemistry: s.autoChemistry,
         activeScenario: s.activeScenario,
         savedExperiments: s.savedExperiments,
       }),
+      // V1 persisted no nutrient fields / layer condition. Fill them with
+      // documented defaults instead of letting old records crash the UI.
+      migrate: (persisted) => migratePersistedState(persisted),
       // Rehydration must never resurrect a mid-treatment state.
       onRehydrateStorage: () => (state) => {
         if (state && state.simStatus === 'running') {
@@ -373,17 +647,131 @@ function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v))
 }
 
-function totalDepthOf(layers: FilterLayer[]) {
-  return layers.reduce((s, l) => s + l.thickness, 0)
+function normalizeWaterQuality(
+  value: Partial<WaterQuality> | undefined,
+  fallback: WaterQuality,
+): WaterQuality {
+  const num = (v: unknown, f: number) => (typeof v === 'number' && Number.isFinite(v) ? v : f)
+  return {
+    turbidity: num(value?.turbidity, fallback.turbidity),
+    contaminant: num(value?.contaminant, fallback.contaminant),
+    nitrate: num(value?.nitrate, fallback.nitrate),
+    phosphate: num(value?.phosphate, fallback.phosphate),
+    pH: num(value?.pH, fallback.pH),
+  }
+}
+
+function normalizeResult(value: unknown): SimResult | null {
+  if (!value || typeof value !== 'object') return null
+  const r = value as Partial<SimResult> & Record<string, unknown>
+  const initial = normalizeWaterQuality(r.initial, INITIAL_WATER)
+  const final = normalizeWaterQuality(r.final, initial)
+  const config = Array.isArray(r.config) ? (r.config as FilterLayer[]) : []
+  const breakdown = Array.isArray(r.breakdown)
+    ? r.breakdown.map((raw) => {
+        const b = raw as Partial<SimResult['breakdown'][number]>
+        return {
+          material: b.material ?? 'gravel',
+          thickness: b.thickness ?? 0,
+          turbidityAfter: b.turbidityAfter ?? initial.turbidity,
+          contaminantAfter: b.contaminantAfter ?? initial.contaminant,
+          nitrateAfter: b.nitrateAfter ?? initial.nitrate,
+          phosphateAfter: b.phosphateAfter ?? initial.phosphate,
+          loading: b.loading ?? 0,
+          saturation: b.saturation ?? 0,
+        }
+      })
+    : []
+  return {
+    id: typeof r.id === 'string' ? r.id : `legacy-${Date.now()}`,
+    timestamp: typeof r.timestamp === 'number' ? r.timestamp : Date.now(),
+    config,
+    flowRate: typeof r.flowRate === 'number' ? r.flowRate : DEFAULT_FLOW_RATE,
+    initial,
+    final,
+    turbidityRemoval: typeof r.turbidityRemoval === 'number' ? r.turbidityRemoval : 0,
+    contaminantRemoval: typeof r.contaminantRemoval === 'number' ? r.contaminantRemoval : 0,
+    nitrateRemoval: typeof r.nitrateRemoval === 'number' ? r.nitrateRemoval : 0,
+    phosphateRemoval: typeof r.phosphateRemoval === 'number' ? r.phosphateRemoval : 0,
+    overallEfficiency: typeof r.overallEfficiency === 'number' ? r.overallEfficiency : 0,
+    contactTime: typeof r.contactTime === 'number' ? r.contactTime : 0,
+    filterLoading: typeof r.filterLoading === 'number' ? r.filterLoading : 0,
+    hydraulicLoad:
+      typeof r.hydraulicLoad === 'number'
+        ? r.hydraulicLoad
+        : (typeof r.flowRate === 'number' ? r.flowRate : DEFAULT_FLOW_RATE) / DESIGN_FLOW_RATE,
+    overflow: r.overflow === true,
+    pollutionScenario: isPollutionScenarioId(String(r.pollutionScenario))
+      ? (r.pollutionScenario as PollutionScenarioId)
+      : undefined,
+    breakdown,
+  }
+}
+
+function migratePersistedState(persisted: unknown): unknown {
+  if (!persisted || typeof persisted !== 'object') return persisted
+  const state = persisted as Record<string, unknown>
+
+  const pollutionScenario =
+    typeof state.pollutionScenario === 'string' && isPollutionScenarioId(state.pollutionScenario)
+      ? state.pollutionScenario
+      : DEFAULT_POLLUTION_SCENARIO
+  const environmental = POLLUTION_SCENARIOS[pollutionScenario]
+
+  const rainIntensity =
+    typeof state.rainIntensity === 'number' ? state.rainIntensity : environmental.start.rainIntensity
+  const erosionIntensity =
+    typeof state.erosionIntensity === 'number'
+      ? state.erosionIntensity
+      : environmental.start.erosionIntensity
+
+  state.pollutionScenario = pollutionScenario
+  state.rainIntensity = rainIntensity
+  state.erosionIntensity = erosionIntensity
+  state.timeOfDay =
+    typeof state.timeOfDay === 'number' ? state.timeOfDay : environmental.start.timeOfDay
+  state.autoChemistry = typeof state.autoChemistry === 'boolean' ? state.autoChemistry : true
+  state.influent = normalizeWaterQuality(
+    state.influent as Partial<WaterQuality> | undefined,
+    deriveScenarioInfluent(environmental, rainIntensity, erosionIntensity),
+  )
+
+  state.layers = Array.isArray(state.layers)
+    ? (state.layers as FilterLayer[]).map((l) => ({
+        ...l,
+        enabled: l.enabled !== false,
+        condition: typeof l.condition === 'number' ? l.condition : 1,
+      }))
+    : defaultConfig()
+
+  state.history = Array.isArray(state.history)
+    ? state.history.map(normalizeResult).filter(Boolean)
+    : []
+
+  state.savedExperiments = Array.isArray(state.savedExperiments)
+    ? (state.savedExperiments as SavedExperiment[]).map((exp) => ({
+        ...exp,
+        result: normalizeResult(exp.result) ?? exp.result,
+      }))
+    : []
+
+  return state
 }
 
 /** Selector: validation for the current column (identity-cached — stable reference). */
 export const selectValidation = (s: SimulationState): ConfigValidation =>
   validateConfigCached(s.layers)
 
-/** Selector: total bed depth in cm. */
-export const selectTotalDepth = (s: SimulationState): number =>
-  s.layers.reduce((sum, l) => sum + l.thickness, 0)
+/** Selector: total active bed depth in cm. */
+export const selectTotalDepth = (s: SimulationState): number => totalDepth(s.layers)
+
+/** Selector: number of beds that currently participate in treatment. */
+export const selectActiveLayerCount = (s: SimulationState): number =>
+  s.layers.filter(isLayerEnabled).length
+
+/** Selector: current hydraulic load relative to the design flow. */
+export const selectHydraulicLoad = (s: SimulationState): number =>
+  s.flowRate / DESIGN_FLOW_RATE
 
 /** Selector: can a new simulation be started right now? */
 export const selectCanRun = (s: SimulationState): boolean =>

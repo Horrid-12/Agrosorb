@@ -1,10 +1,27 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Eye,
+  EyeOff,
+  Microscope,
+  Plus,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { GameButton } from '@/components/ui/GameButton'
-import { useSimulationStore, selectTotalDepth, selectValidation } from '@/stores/simulationStore'
+import { ControlSlider } from '@/components/ui/ControlSlider'
+import {
+  useSimulationStore,
+  selectTotalDepth,
+  selectValidation,
+} from '@/stores/simulationStore'
 import { MATERIALS, MATERIAL_ORDER } from '@/data/materials'
 import { COLUMN_LIMITS } from '@/simulation/models/constants'
 import { SCENARIOS } from '@/data/scenarios'
+import { isLayerEnabled } from '@/simulation/engine/filtrationEngine'
 
 /**
  * Filter configuration interface. Layers are ordered top → bottom
@@ -16,6 +33,8 @@ export function FilterConfigurator() {
   const addLayer = useSimulationStore((s) => s.addLayer)
   const removeLayer = useSimulationStore((s) => s.removeLayer)
   const setLayerThickness = useSimulationStore((s) => s.setLayerThickness)
+  const setLayerEnabled = useSimulationStore((s) => s.setLayerEnabled)
+  const setLayerCondition = useSimulationStore((s) => s.setLayerCondition)
   const moveLayer = useSimulationStore((s) => s.moveLayer)
   const clearColumn = useSimulationStore((s) => s.clearColumn)
   const loadDefaultColumn = useSimulationStore((s) => s.loadDefaultColumn)
@@ -63,15 +82,16 @@ export function FilterConfigurator() {
           <AnimatePresence initial={false}>
             {layers.map((layer, i) => {
               const def = MATERIALS[layer.material]
+              const enabled = isLayerEnabled(layer)
               return (
                 <motion.div
                   key={layer.id}
                   layout
                   initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  animate={{ opacity: enabled ? 1 : 0.55, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.18 }}
-                  className="rounded-xl border border-ag-ui-border bg-ag-ui-light/70 p-2.5"
+                  className={`rounded-xl border p-2.5 ${enabled ? 'border-ag-ui-border bg-ag-ui-light/70' : 'border-ag-ui-border/50 bg-ag-ui/40'}`}
                 >
                   <div className="flex items-center gap-2">
                     <span
@@ -85,6 +105,18 @@ export function FilterConfigurator() {
                         #{i + 1}
                       </span>
                     </span>
+                    <button
+                      onClick={() => setLayerEnabled(layer.id, !enabled)}
+                      aria-pressed={enabled}
+                      aria-label={`${enabled ? 'Disable' : 'Enable'} ${def.name} layer`}
+                      className={`rounded border px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider transition ${
+                        enabled
+                          ? 'border-ag-fresh/40 bg-ag-fresh/15 text-ag-fresh'
+                          : 'border-ag-ui-border text-ag-text-dim'
+                      }`}
+                    >
+                      {enabled ? <Eye size={12} /> : <EyeOff size={12} />}
+                    </button>
                     <button
                       onClick={() => moveLayer(layer.id, -1)}
                       disabled={i === 0}
@@ -124,6 +156,17 @@ export function FilterConfigurator() {
                     <span className="w-12 shrink-0 text-right font-mono text-[11px] text-ag-sand">
                       {layer.thickness.toFixed(1)}cm
                     </span>
+                  </div>
+                  <div className="mt-1.5">
+                    <ControlSlider
+                      label="Condition"
+                      value={layer.condition ?? 1}
+                      min={0.05}
+                      max={1}
+                      step={0.05}
+                      display={`${Math.round((layer.condition ?? 1) * 100)}%`}
+                      onChange={(v) => setLayerCondition(layer.id, v)}
+                    />
                   </div>
                 </motion.div>
               )
@@ -191,6 +234,12 @@ export function FilterConfigurator() {
             Clear
           </GameButton>
         </div>
+        <button
+          onClick={() => setPanel('inspection')}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-ag-water/40 bg-ag-water/10 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ag-sky transition hover:bg-ag-water/20"
+        >
+          <Microscope size={13} /> Inspect filter station
+        </button>
       </footer>
     </div>
   )
@@ -210,11 +259,12 @@ function ColumnPreview() {
         {[...layers].reverse().map((l) => (
           <div
             key={l.id}
-            title={`${MATERIALS[l.material].name} — ${l.thickness} cm`}
+            title={`${MATERIALS[l.material].name} — ${l.thickness} cm${isLayerEnabled(l) ? '' : ' (bypassed)'}`}
             style={{
               background: MATERIALS[l.material].color,
               height: `${(l.thickness / total) * 100}%`,
               minHeight: 3,
+              opacity: isLayerEnabled(l) ? 1 : 0.3,
             }}
           />
         ))}
@@ -231,6 +281,7 @@ function ColumnPreview() {
               <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: MATERIALS[l.material].color }} />
               <span className="truncate">
                 {i + 1}. {MATERIALS[l.material].name} — {l.thickness} cm
+                {isLayerEnabled(l) ? '' : ' (bypassed)'}
               </span>
             </div>
           ))

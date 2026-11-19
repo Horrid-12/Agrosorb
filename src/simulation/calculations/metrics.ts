@@ -7,7 +7,11 @@ import type {
   SimResult,
   WaterQuality,
 } from '@/types'
-import { initialWaterFromStorm } from '../engine/filtrationEngine'
+import {
+  initialWaterFromStorm,
+  isLayerEnabled,
+  totalDepth,
+} from '../engine/filtrationEngine'
 
 /* ------------------------------------------------------------------ *
  * Illustrative material cost model (Experiment Mode)
@@ -22,19 +26,20 @@ export const MATERIAL_COST_PER_CM: Record<FilterMaterial, number> = {
   carbon: 8,
 }
 
-/** Illustrative material cost of a configuration, in credits. */
+/** Illustrative material cost of an active configuration, in credits. */
 export function estimateMaterialCost(layers: FilterLayer[]): number {
-  const total = layers.reduce(
-    (sum, l) => sum + l.thickness * MATERIAL_COST_PER_CM[l.material],
-    0,
-  )
+  const total = layers
+    .filter(isLayerEnabled)
+    .reduce((sum, l) => sum + l.thickness * MATERIAL_COST_PER_CM[l.material], 0)
   return Math.round(total * 10) / 10
 }
 
-/** Total bed depth per material (cm) — used in comparison tables. */
+/** Active bed depth per material (cm) — used in comparison tables. */
 export function materialTotals(layers: FilterLayer[]): Record<FilterMaterial, number> {
   const totals: Record<FilterMaterial, number> = { gravel: 0, sand: 0, carbon: 0 }
-  for (const l of layers) totals[l.material] += l.thickness
+  for (const l of layers) {
+    if (isLayerEnabled(l)) totals[l.material] += l.thickness
+  }
   return totals
 }
 
@@ -48,18 +53,28 @@ function objectiveValue(result: SimResult, metric: Objective['metric']): number 
       return result.turbidityRemoval
     case 'contaminantRemoval':
       return result.contaminantRemoval
+    case 'nitrateRemoval':
+      return result.nitrateRemoval
+    case 'phosphateRemoval':
+      return result.phosphateRemoval
     case 'overallEfficiency':
       return result.overallEfficiency
     case 'finalTurbidity':
       return result.final.turbidity
     case 'finalContaminant':
       return result.final.contaminant
+    case 'finalNitrate':
+      return result.final.nitrate
+    case 'finalPhosphate':
+      return result.final.phosphate
     case 'finalPH':
       return result.final.pH
     case 'totalDepth':
-      return result.config.reduce((sum, l) => sum + l.thickness, 0)
+      return totalDepth(result.config)
     case 'contactTime':
       return result.contactTime
+    case 'filterLoading':
+      return result.filterLoading * 100
     case 'cost':
       return estimateMaterialCost(result.config)
   }

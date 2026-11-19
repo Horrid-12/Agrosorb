@@ -60,7 +60,7 @@ export function samplePolyline(
  */
 export const RUNOFF_PATHS: Array<Array<[number, number]>> = [
   // Field A → cross channel → main channel → station inlet
-  [[1, -17], [1, -1.4], [9.9, -1.4], [9.9, 12.5]],
+  [[1, -17], [1, -8], [9.9, -8], [9.9, 12.5]],
   // Field B → east into the main channel
   [[1, 3], [9.9, 3], [9.9, 12.5]],
   // Field C → west into the main channel
@@ -76,7 +76,7 @@ export const LAYOUT = {
     C: { xMin: 12, xMax: 26, zMin: -24, zMax: -10 },
   },
   mainChannel: { xMin: 9, xMax: 10.8, zMin: -27, zMax: 13.5 },
-  crossChannel: { xMin: -6, xMax: 9, zMin: -2.2, zMax: -0.6 },
+  crossChannel: { xMin: -6, xMax: 9, zMin: -8.8, zMax: -7.2 },
   outletChannel: { xMin: 10.8, xMax: 20.4, zMin: 18.6, zMax: 20.2 },
   station: { x: 10, z: 16.5 },
   tank: { x: 22, z: 19.4 },

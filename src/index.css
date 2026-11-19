@@ -130,3 +130,56 @@ input[type='range']:focus-visible {
   outline: 2px solid var(--color-ag-fresh);
   outline-offset: 2px;
 }
+
+/* ─── Comic / print-inspired UI accents ─────────────────────────────
+ * Hard borders and offset shadows, never glow or glassmorphism.
+ * The halftone texture is generated in CSS so panels stay crisp at any
+ * size and add no image payload.
+ */
+.comic-panel {
+  border: 2px solid var(--color-ag-ui-border);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 0 #0d1611;
+}
+
+.halftone {
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.4px);
+  background-size: 7px 7px;
+  color: var(--color-ag-text);
+}
+
+/* Falling water droplets inside the filter inspection cross-section. */
+.inspection-droplet {
+  top: -10%;
+  animation-name: inspection-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes inspection-fall {
+  0% {
+    top: -10%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.7;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspection-droplet {
+    animation: none;
+    top: 40%;
+    opacity: 0.35;
+  }
+  .animate-pulse-soft {
+    animation: none;
+  }
+}

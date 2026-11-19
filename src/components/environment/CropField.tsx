@@ -1,7 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Instance, Instances } from '@react-three/drei'
+import { useFrame } from '@react-three/fiber'
+import type { Group } from 'three'
 import type { FieldRect } from './layout'
 import { mulberry32 } from './layout'
+import { useSimulationStore } from '@/stores/simulationStore'
 
 /** Visual crop type that changes the shape, colour and size of plants. */
 export type CropType = 'wheat' | 'corn' | 'cabbage'
@@ -61,14 +64,62 @@ function usePlantGrid(rect: FieldRect, seed: number, cols: number, rows: number)
  * - **cabbage** — low round green heads sitting on the soil
  */
 export function CropField({ rect, seed, cropType = 'wheat' }: CropFieldProps) {
-  switch (cropType) {
-    case 'corn':
-      return <CornField rect={rect} seed={seed} />
-    case 'cabbage':
-      return <CabbageField rect={rect} seed={seed} />
-    default:
-      return <WheatField rect={rect} seed={seed} />
-  }
+  const cx = (rect.xMin + rect.xMax) / 2
+  const cz = (rect.zMin + rect.zMax) / 2
+
+  const field =
+    cropType === 'corn' ? (
+      <CornField rect={rect} seed={seed} />
+    ) : cropType === 'cabbage' ? (
+      <CabbageField rect={rect} seed={seed} />
+    ) : (
+      <WheatField rect={rect} seed={seed} />
+    )
+
+  return (
+    <WindSway x={cx} z={cz} seed={seed}>
+      {field}
+    </WindSway>
+  )
+}
+
+/**
+ * Subtle wind sway applied around each field's centre. Amplitude grows
+ * with the rainfall slider (storms carry stronger gusts), so the crop
+ * motion reads as a consequence of the weather controls rather than a
+ * looping decoration. This is a tiny tilt — plants never leave the soil.
+ */
+function WindSway({
+  x,
+  z,
+  seed,
+  children,
+}: {
+  x: number
+  z: number
+  seed: number
+  children: React.ReactNode
+}) {
+  const inner = useRef<Group>(null)
+
+  useFrame(({ clock }) => {
+    const group = inner.current
+    if (!group) return
+    const s = useSimulationStore.getState()
+    const storm = s.rainIntensity
+    const phase = seed * 0.41
+    const amp = 0.003 + storm * 0.017 + (s.phase === 'runoff' ? 0.008 : 0)
+    group.rotation.z = Math.sin(clock.elapsedTime * 1.3 + phase) * amp + amp * 0.35
+    group.rotation.x = Math.cos(clock.elapsedTime * 1.05 + phase * 1.7) * amp * 0.55
+  })
+
+  return (
+    <group position={[x, 0, z]}>
+      <group ref={inner} position={[-x, 0, -z]}>
+        {children}
+      </group>
+    </group>
+  )
 }
 
 /* ─── WHEAT ────────────────────────────────────────────────────────── */

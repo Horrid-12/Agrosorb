@@ -43,22 +43,45 @@ assert(
   'layer order affects efficiency',
 )
 
-// 4. Flow rate affects adsorption (contact time), not turbidity mechanics
+// 4. Flow rate affects adsorption (contact time), not turbidity mechanics.
+//    The refractory residual caps removal near 98%, so the "lower flow"
+//    direction is checked on a deliberately under-sized carbon bed where
+//    the model has not yet saturated.
 const fast = simulateFiltration(base, 6, storm)
-const slow = simulateFiltration(base, 1, storm)
 assert(fast.contaminantRemoval < r1.contaminantRemoval, 'higher flow reduces adsorption')
-assert(slow.contaminantRemoval > r1.contaminantRemoval, 'lower flow increases adsorption')
 assert(fast.contactTime < r1.contactTime, 'contact time shrinks with flow')
 
-// 5. More carbon → more adsorption
-const moreCarbon: FilterLayer[] = [
+const thinCarbon: FilterLayer[] = [
   { id: 'a', material: 'sand', thickness: 3 },
-  { id: 'b', material: 'carbon', thickness: 8 },
+  { id: 'b', material: 'carbon', thickness: 0.5 },
   { id: 'c', material: 'gravel', thickness: 2 },
 ]
+const thinBase = simulateFiltration(thinCarbon, 2, storm)
+const thinSlow = simulateFiltration(thinCarbon, 1, storm)
 assert(
-  simulateFiltration(moreCarbon, 2, storm).contaminantRemoval > r1.contaminantRemoval,
+  thinSlow.contaminantRemoval > thinBase.contaminantRemoval,
+  'lower flow increases adsorption (sub-saturated bed)',
+)
+assert(
+  thinSlow.final.contaminant < thinBase.final.contaminant,
+  'lower flow lowers final contaminant (sub-saturated bed)',
+)
+
+// 5. More carbon → more adsorption. Compared on sub-saturated beds so the
+//    documented refractory residual does not collapse both runs to 98%.
+const moreCarbon: FilterLayer[] = [
+  { id: 'a', material: 'sand', thickness: 3 },
+  { id: 'b', material: 'carbon', thickness: 2 },
+  { id: 'c', material: 'gravel', thickness: 2 },
+]
+const moreCarbonRun = simulateFiltration(moreCarbon, 2, storm)
+assert(
+  moreCarbonRun.contaminantRemoval > thinBase.contaminantRemoval,
   'thicker carbon bed adsorbs more',
+)
+assert(
+  moreCarbonRun.final.contaminant < thinBase.final.contaminant,
+  'thicker carbon bed leaves less contaminant',
 )
 
 // 6. Gravel-only column barely removes anything (long contact time still

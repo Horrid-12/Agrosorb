@@ -1,17 +1,26 @@
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { FlaskConical, GraduationCap, BarChart3, Beaker, Home } from 'lucide-react'
+import {
+  FlaskConical,
+  GraduationCap,
+  BarChart3,
+  Home,
+  Microscope,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { useKeyboardControls } from '@/hooks/useKeyboardControls'
 import { useIsMobile, checkWebGL } from '@/hooks/useMediaQuery'
-import { validateConfig } from '@/simulation/engine/filtrationEngine'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { SceneFallback } from '@/components/SceneFallback'
 import { SimulationControls } from '@/components/simulation/SimulationControls'
 import { FilterConfigurator } from '@/components/simulation/FilterConfigurator'
 import { ResultsDashboard } from '@/components/dashboard/ResultsDashboard'
 import { LearningPanel } from '@/components/learn/LearningPanel'
-import { ExperimentsPanel } from '@/components/experiments/ExperimentsPanel'
+import { ScenarioPanel } from '@/components/simulation/ScenarioPanel'
+import { FilterInspection } from '@/components/simulation/FilterInspection'
 import { useSimulationStore } from '@/stores/simulationStore'
+import { POLLUTION_SCENARIOS } from '@/data/pollutionScenarios'
+import type { HudPanel } from '@/types'
 import { lazy, Suspense } from 'react'
 
 const AgriculturalScene = lazy(() => import('@/scenes/AgriculturalScene'))
@@ -28,6 +37,7 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
   const setPanel = useSimulationStore((s) => s.setPanel)
   const phase = useSimulationStore((s) => s.phase)
   const activeScenario = useSimulationStore((s) => s.activeScenario)
+  const pollutionScenario = useSimulationStore((s) => s.pollutionScenario)
   const isMobile = useIsMobile()
   const webglOk = checkWebGL()
   const simStatus = useSimulationStore((s) => s.simStatus)
@@ -37,10 +47,7 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     if (phase !== 'runoff') return
     const t = setTimeout(() => {
-      const store = useSimulationStore.getState()
-      if (validateConfig(store.layers).valid) {
-        store.runSimulation()
-      }
+      useSimulationStore.getState().runSimulation()
     }, 1800)
     return () => clearTimeout(t)
   }, [phase])
@@ -95,18 +102,23 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
             <span className="rounded-full border border-ag-ui-border bg-ag-ui/85 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ag-text-dim">
               {phase}
             </span>
-            {activeScenario !== 'free' && (
+            {activeScenario !== 'free' ? (
               <span className="rounded-full border border-ag-fresh/50 bg-ag-fresh/15 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-ag-fresh">
                 {activeScenario.replace('-', ' ')}
+              </span>
+            ) : (
+              <span className="hidden rounded-full border border-ag-water/40 bg-ag-water/10 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-ag-sky sm:inline">
+                {POLLUTION_SCENARIOS[pollutionScenario].name}
               </span>
             )}
           </div>
 
           {/* Panel switcher */}
-          <div className="pointer-events-auto flex gap-2">
+          <div className="pointer-events-auto flex max-w-[62vw] flex-wrap justify-end gap-1.5">
+            <PanelTab active={panel === 'scenario'} onClick={() => toggle(panel, setPanel, 'scenario')} icon={<SlidersHorizontal size={15} />} label="Scenario" hint="S" />
             <PanelTab active={panel === 'config'} onClick={() => toggle(panel, setPanel, 'config')} icon={<FlaskConical size={15} />} label="Filter" hint="C" />
+            <PanelTab active={panel === 'inspection'} onClick={() => toggle(panel, setPanel, 'inspection')} icon={<Microscope size={15} />} label="Inspect" hint="I" />
             <PanelTab active={panel === 'results'} onClick={() => toggle(panel, setPanel, 'results')} icon={<BarChart3 size={15} />} label="Results" hint="R" />
-            <PanelTab active={panel === 'experiments'} onClick={() => toggle(panel, setPanel, 'experiments')} icon={<Beaker size={15} />} label="Lab" hint="E" />
             <PanelTab active={panel === 'learn'} onClick={() => toggle(panel, setPanel, 'learn')} icon={<GraduationCap size={15} />} label="Learn" />
           </div>
         </div>
@@ -129,9 +141,10 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
             className="absolute bottom-4 right-4 top-[4.5rem] z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ag-ui-border/80 bg-ag-ui/92 shadow-panel"
             aria-label={`${panel} panel`}
           >
+            {panel === 'scenario' && <ScenarioPanel />}
             {panel === 'config' && <FilterConfigurator />}
+            {panel === 'inspection' && <FilterInspection />}
             {panel === 'results' && <ResultsDashboard />}
-            {panel === 'experiments' && <ExperimentsPanel />}
             {panel === 'learn' && <LearningPanel />}
           </motion.aside>
         )}
@@ -141,9 +154,9 @@ export function SimulationPage({ onExit }: { onExit: () => void }) {
 }
 
 function toggle(
-  current: string | null,
-  setPanel: (p: 'config' | 'results' | 'learn' | 'experiments' | null) => void,
-  id: 'config' | 'results' | 'learn' | 'experiments',
+  current: HudPanel,
+  setPanel: (p: HudPanel) => void,
+  id: Exclude<HudPanel, null>,
 ) {
   setPanel(current === id ? null : id)
 }
